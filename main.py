@@ -15,18 +15,20 @@ def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--batch_size', type=int, default=8)
+    parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--n_basis', type=int, default=4)
-    parser.add_argument('--dim_hidden', type=int, default=64)
+    parser.add_argument('--dim_hidden', type=int, default=512)
+    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--n_ortho', type=int, default=int(1e4))
 
     return parser.parse_args()
 
 def cifar10_loader(batch_size):
     dataset = datasets.CIFAR10(
         root='./data', train=True, 
-        download=False, transform=transforms.ToTensor()
+        download=True, transform=transforms.ToTensor()
     )
 
     loader = torch.utils.data.DataLoader(
@@ -43,22 +45,29 @@ if __name__ == '__main__':
     #percept_loss = lpips.LPIPS(net='alex')
 
     # make neural basis model to train
-    model = NbModel(hps.n_basis, hps.dim_hidden)
+    model = NbModel(hps.n_basis, hps.dim_hidden).to(hps.device)
     optim = Adam(model.parameters(), lr=hps.lr)
 
-    rl, ol = [], []
-    freq = 100
+    # if model and optimizer exist, load them
+    if os.path.exists(f'{hps.exp_path}/model.pth'):
+        print('loading model and optimizer')
+        #model.load_state_dict(torch.load(f'{hps.exp_path}/model.pth'))
+        #optim.load_state_dict(torch.load(f'{hps.exp_path}/optim.pth'))
+
+    freq = 20
     while True:
+        rl, ol = [], []
+        print('fresh epoch')
         for i, (x, _) in enumerate(loader):
             plot = i % freq == 0
+            x = x.to(hps.device)
 
-            y, basis = model(x, plot=plot)
+            # get reconstruction
+            y = model(x, plot=plot)
             recon = (x - y).pow(2).mean() 
 
-            # encourage orthongonality
-            ortho = (basis @ basis.T) / basis.shape[1] 
-            ortho = torch.triu(ortho, diagonal=1).pow(2).mean()
-
+            # encourage orthonormality
+            ortho = model.orthon_sample(hps.n_ortho, device=hps.device)
             loss = recon + ortho
 
             optim.zero_grad()

@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-def plot_basis(x):
+def plot_basis(x, path):
     '''
     x : [n**2, 32, 32]
     we want to plot an n x n grid of images
