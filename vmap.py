@@ -4,21 +4,23 @@ import torch.nn as nn
 import copy
 
 class ResNet(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, dim_hidden=64, num_layers=3):
         super().__init__()
         '''
         a small resnet that maps [128] -> [2]
         '''
+        self.dim_hidden = dim_hidden
+        self.num_layers = num_layers
 
-        self.first = nn.Linear(128, 64)
+        self.first = nn.Linear(2, self.dim_hidden)
 
         self.res_block = nn.Sequential(
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
+            nn.Linear(self.dim_hidden, self.dim_hidden),
+            nn.ELU(),
+            nn.Linear(self.dim_hidden, self.dim_hidden),
         ) 
 
-        self.last = nn.Linear(64, 2)
+        self.last = nn.Linear(self.dim_hidden, 2)
 
         self.blocks = nn.ModuleList([copy.deepcopy(self.res_block) for _ in range(3)])
 

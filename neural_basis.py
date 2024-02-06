@@ -23,126 +23,154 @@ def unit_circle(angle):
 
     return torch.cat([x, y], dim=-1)
 
+class ResNet(torch.nn.Module):
+    def __init__(self, dim_hidden, num_layers):
+        super().__init__()
+        '''
+        a small resnet that maps [128] -> [2]
+        '''
+        self.dim_hidden = dim_hidden
+        self.num_layers = num_layers
+
+        self.first = nn.Linear(2, self.dim_hidden)
+
+        self.res_block = nn.Sequential(
+            nn.Linear(self.dim_hidden, self.dim_hidden),
+            nn.ELU(),
+            nn.Linear(self.dim_hidden, self.dim_hidden),
+        ) 
+
+        self.last = nn.Linear(self.dim_hidden, 1)
+
+        self.blocks = nn.ModuleList([copy.deepcopy(self.res_block) for _ in range(num_layers)])
+
+    def forward(self, x):
+        x = self.first(x)
+        for block in self.blocks:
+            x = x + block(x)
+        x = self.last(x)
+        return x
+
 
 class NbModel(nn.Module):
-    def __init__(self, n_basis, dim_hidden):
+    def __init__(self, n_basis, dim_hidden, n_layers):
         super().__init__()
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
 
-        net = partial(
-            SirenNet,
-            dim_in=2,
-            dim_hidden=dim_hidden,
-            dim_out=1,
-            num_layers=4,
-            w0_initial=30.,
-        )
-        self.sirens = nn.ModuleList([net() for _ in range(2*n_basis**2)])
 
-        #self.sirens = [net() for _ in range(2*n_basis**2)]
-        #self.params, self.buffers = stack_module_state(self.sirens)
+        self.sirens = nn.ModuleList([
+            SirenNet(
+                dim_in=2,
+                dim_hidden=dim_hidden,
+                dim_out=1, num_layers=1,
+                w0_initial= (i % n_basis**2) + 2
+            )
+            for i in range(2*n_basis**2)
+        ])
 
-        #print('hmm')
-        #a = torch.randn(5, 2)
-        #b = torch.randn(2*n_basis**2, 5, 2)
+        #self.sirens = nn.ModuleList([
+            #ResNet(dim_hidden=dim_hidden, num_layers=n_layers)
+            #for i in range(2*n_basis**2)
+        #])
 
-        #print(self.sirens[0](a).shape)
-        #print(self.pmap(b).shape)
-    
-    #def pmap(self, x):
-        #return torch.vmap(self.v_model)(self.params, self.buffers, x)
-
-    #def v_model(self, params, buffers, x):
-        #base = copy.deepcopy(self.sirens[0]).to('meta')
-        #return functional_call(base, (params, buffers), (x,))
-
-    def forward(self, lines):
-        print(lines)
-        self.sirens(lines)
-        quit()
-
-        return y
 
     # TODO: parallelize this! 
-    def circ2basis(self, circle):
+    def circ2basis(self, circle, grad=False):
         out = []
-        for i, siren in enumerate(self.sirens):
-            out.append(siren(circle[i]))
+        if grad:
+            for i, siren in enumerate(self.sirens):
+                out.append(siren(circle[i]))
+        else:
+            with torch.no_grad():
+                for i, siren in enumerate(self.sirens):
+                    out.append(siren(circle[i]))
         return torch.stack(out, dim=0)
+
+    def forward(self, x, mag, shift, plot):
+        y = self.neural_recon(x, mag, shift, plot, grad=True)
+        return y
     
+    def neural_recon(self, x, mag, shift, plot=False, grad=False):
+        b, c, h, w = x.shape
+        k = self.n_basis
+
+        # each image gets 2 groups of k**2 basis functions
+        # the group are vertically and horizontally oriented and added
+        line = torch.linspace(0, 1, 32).to(x.device)
+        lines_w = repeat(line, 'w -> b k2 c w', b=b, k2=k**2, c=c)
+        lines_h = repeat(line, 'h -> b k2 c h', b=b, k2=k**2, c=c)
+        lines = torch.cat([lines_w, lines_h], dim=1)
+
+        # cyclically shift each line independently
+        pre = (lines + shift[..., None]) % 1
+        pre = rearrange(pre, 'b n c f -> n (b c f) 1')
+
+        # map [0,1] to x,y unit circle coords (for nn continuity)
+        circle = unit_circle(pre.clone())
+
+        # get basis given domain provided
+        basis_line = self.circ2basis(circle, grad)
+
+        # add vertical and horizontal basis
+        basis_stack = rearrange(basis_line, 'n (b c f) 1 -> b n c f', b=b, c=c, f=h)
+        basis_w = basis_stack[:, :k**2]; basis_h = basis_stack[:, k**2:]
+
+        # create vertically and horizontally oriented 2d basis
+        basis_w = repeat(basis_w, 'b k c w -> b k c h w', h=h, w=w)
+        basis_h = repeat(basis_h, 'b k c h -> b k c h w', h=h, w=w)
+
+        basis = basis_w + basis_h
+        if plot: plot_basis(basis[0], 'basis.png')
+
+        # scale basis
+        scaled_basis = basis * mag[..., None, None]
+        y = scaled_basis.sum(dim=1)
+        return y
+
     def coeff_optim(self, x):
         b, c, h, w = x.shape
         k = self.n_basis
 
         # params to shift and scale basis
         # we want to cycle shift each dim (think a torus)
-        mag = torch.randn(b, k**2, c).to(x.device)
+        mag = torch.randn(b, k**2, c).to(x.device) / (2*k**2)
         shift = torch.rand(b, 2*k**2, c).to(x.device)
-        print(shift.shape)
 
-        #A = nn.Parameter(A)
-        #optim = Adam([A], lr=1e-1)
+        # optim
+        mag = nn.Parameter(mag)
+        shift = nn.Parameter(shift)
+        optim = Adam([mag, shift], lr=5e-2)
 
-        # stack of rows [0,1], we want 2 overlapping filters for n-basis^2 grid
-        # 1st filter is horizontal, 2nd is vertical (or vice versa?)
-        line = torch.linspace(0, 1, 32).to(x.device)
-        lines_w = repeat(line, 'w -> b k2 c h w', b=b, k2=k**2, c=c, h=h)
-        lines_h = repeat(line, 'h -> b k2 c h w', b=b, k2=k**2, c=c, w=w)
-        lines = torch.cat([lines_w, lines_h], dim=1)
-        print(lines.shape)
-        print(shift.shape)
-        quit()
-
-        # cyclically shift each row
-        pre = (lines + shift[..., None, None]) % 1
-        pre = rearrange(pre, 'b n c h w -> n (b c h w) 1')
-        circle = unit_circle(pre)
-
-        # get basis given domain provided
-        with torch.no_grad():
-            basis_line = self.circ2basis(circle) 
-
-        # add vertical and horizontal basis
-        basis_stack = rearrange(basis_line, 'n (b c h w) 1 -> b n c h w', b=b, c=c, h=h, w=w)
-        basis_w = basis_stack[:, :k**2]; basis_h = basis_stack[:, k**2:]
-        basis = basis_w + basis_h
-
-
-
-        # send all to cuda
-        import time
-        t0 = time.time()
-        for _ in range(50):
-            # multiply basis by coefficients
-            y = A * basis
-            y = y.sum(dim=1)
+        # get optimal shift and scale to align basis 
+        for _ in range(30):
+            y = self.neural_recon(x, mag, shift)
 
             loss = (x - y).pow(2).mean()
 
             optim.zero_grad()
             loss.backward()
             optim.step()
-        print(time.time()-t0)
-        quit()
 
-        return A.detach()
+        return mag.detach(), shift.detach()
 
     def orthon_sample(self, n_samples, device='cuda', plot=False):
         # sample random point in [0,1]
         x = torch.rand(n_samples)[..., None].to(device)
-        circle = unit_circle(x)
-        y = rearrange(self.siren(circle), 'n k -> k n')
-        x = rearrange(x, 'n k -> k n')
+        x = repeat(x, 'n 1 -> k n 1', k=2*self.n_basis**2)
 
-        if plot: plot_line(x.detach(), y.detach(), 'line.png')
+        circle = unit_circle(x.clone())
+        y = self.circ2basis(circle, grad=True)
+
+        x = x[..., -1]; y = y[..., -1]
+        y_w = y[:self.n_basis**2]; y_h = y[self.n_basis**2:]
+
+        if plot: plot_line(x[0].detach(), y_w.detach(), y_h.detach(), 'line.png')
 
         # compute inner product of all pairs
-        ip = (y @ y.T) / n_samples
+        ip = ( (y_w @ y_w.T) + (y_h @ y_h.T) ) / n_samples 
         triu_ip = torch.triu(ip, diagonal=0)
 
         # orthonormally coresponds to identity
-        tgt = torch.eye(triu_ip.shape[0]).to(device)
-        orthon_loss = (triu_ip - tgt).pow(2).mean()
-
+        orthon_loss = triu_ip.pow(2).mean()
         return orthon_loss

@@ -15,13 +15,15 @@ def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--batch_size', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-5)
-    parser.add_argument('--n_basis', type=int, default=4)
-    parser.add_argument('--dim_hidden', type=int, default=512)
     parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--n_ortho', type=int, default=int(1e4))
+    parser.add_argument('--n_ortho', type=int, default=int(1e3))
+
+    parser.add_argument('--n_basis', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=3)
+    parser.add_argument('--dim_hidden', type=int, default=64)
 
     return parser.parse_args()
 
@@ -45,7 +47,7 @@ if __name__ == '__main__':
     #percept_loss = lpips.LPIPS(net='alex')
 
     # make neural basis model to train
-    model = NbModel(hps.n_basis, hps.dim_hidden).to(hps.device)
+    model = NbModel(hps.n_basis, hps.dim_hidden, hps.n_layers).to(hps.device)
     print(f'params: {sum(p.numel() for p in model.parameters())}')
 
     optim = Adam(model.parameters(), lr=hps.lr)
@@ -56,26 +58,24 @@ if __name__ == '__main__':
         #model.load_state_dict(torch.load(f'{hps.exp_path}/model.pth'))
         #optim.load_state_dict(torch.load(f'{hps.exp_path}/optim.pth'))
 
-    freq = 20
+    freq = 25
     while True:
         rl, ol = [], []
         print('fresh epoch')
         for i, (x, _) in enumerate(loader):
             plot = i % freq == 0
             x = x.to(hps.device)
+            x = 2*x - 1
 
             # get reconstruction
             mag, shift = model.coeff_optim(x)
-            basis = model(hps.batch_size)
-            print('done')
-            quit()
+            y = model(x, mag, shift, plot=plot)
 
-            y = model(x, plot=plot)
             recon = (x - y).pow(2).mean() 
 
             # encourage orthonormality
             ortho = model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
-            loss = recon + ortho
+            loss = recon #+ 1e-2*ortho
 
             optim.zero_grad()
             loss.backward()
@@ -83,6 +83,7 @@ if __name__ == '__main__':
 
             rl.append(recon.item())
             ol.append(ortho.item())
+            ol.append(0)
 
             if i % freq == 0:
                 print(f'recon: {sum(rl)/len(rl):.4f}, ortho: {sum(ol)/len(ol):.4f}')
