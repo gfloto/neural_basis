@@ -15,7 +15,7 @@ def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--batch_size', type=int, default=256)
+    parser.add_argument('--batch_size', type=int, default=5)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-5)
     parser.add_argument('--n_basis', type=int, default=4)
@@ -46,6 +46,8 @@ if __name__ == '__main__':
 
     # make neural basis model to train
     model = NbModel(hps.n_basis, hps.dim_hidden).to(hps.device)
+    print(f'params: {sum(p.numel() for p in model.parameters())}')
+
     optim = Adam(model.parameters(), lr=hps.lr)
 
     # if model and optimizer exist, load them
@@ -63,6 +65,11 @@ if __name__ == '__main__':
             x = x.to(hps.device)
 
             # get reconstruction
+            mag, shift = model.coeff_optim(x)
+            basis = model(hps.batch_size)
+            print('done')
+            quit()
+
             y = model(x, plot=plot)
             recon = (x - y).pow(2).mean() 
 

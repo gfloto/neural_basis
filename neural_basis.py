@@ -1,7 +1,11 @@
+import math
+import copy
 import torch
 import torch.nn as nn
-import math
 from torch.optim import Adam
+from torch.func import stack_module_state, functional_call
+
+from functools import partial
 from einops import rearrange, repeat
 from siren_pytorch import SirenNet
 
@@ -26,47 +30,89 @@ class NbModel(nn.Module):
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
 
-        self.siren = SirenNet(
-            dim_in = 2,
-            dim_hidden = dim_hidden,
-            dim_out = n_basis,
-            num_layers = 12,
-            w0_initial = 30.
+        net = partial(
+            SirenNet,
+            dim_in=2,
+            dim_hidden=dim_hidden,
+            dim_out=1,
+            num_layers=4,
+            w0_initial=30.,
         )
+        self.sirens = nn.ModuleList([net() for _ in range(2*n_basis**2)])
 
-    def forward(self, x, plot=False):
-        bs = x.shape[0]
-        line = torch.linspace(0, 1, 32)[..., None].to(x.device)
+        #self.sirens = [net() for _ in range(2*n_basis**2)]
+        #self.params, self.buffers = stack_module_state(self.sirens)
 
-        circle = unit_circle(line)
-        basis_line = self.siren(circle)
+        #print('hmm')
+        #a = torch.randn(5, 2)
+        #b = torch.randn(2*n_basis**2, 5, 2)
 
-        # make into plane combining all combination of basis 
-        (w, q) = basis_line.shape
-        bl_x = repeat(basis_line[None, None, ...], '1 1 h k -> k q h w', w=w, q=q)
-        bl_y = repeat(basis_line[None, None, ...], '1 1 h k -> q k w h', w=w, q=q)
-        basis = rearrange(bl_x + bl_y, 'k q h w -> (k q) h w')
+        #print(self.sirens[0](a).shape)
+        #print(self.pmap(b).shape)
+    
+    #def pmap(self, x):
+        #return torch.vmap(self.v_model)(self.params, self.buffers, x)
 
-        # repeat along batch and color channels
-        basis = repeat(basis[None, :, None, ...], '1 k 1 h w -> b k c h w', b=bs, c=3)
-        if plot: plot_basis(basis[0,:,0], basis_line, 'basis.png')
+    #def v_model(self, params, buffers, x):
+        #base = copy.deepcopy(self.sirens[0]).to('meta')
+        #return functional_call(base, (params, buffers), (x,))
 
-        # find optimal coeffients for basis 
-        A = self.coeff_optim(
-            basis.detach().clone().cpu(),
-            x.detach().clone().cpu()
-        ).to(x.device)
-        y = (A * basis).sum(dim=1)
+    def forward(self, lines):
+        print(lines)
+        self.sirens(lines)
+        quit()
 
         return y
+
+    # TODO: parallelize this! 
+    def circ2basis(self, circle):
+        out = []
+        for i, siren in enumerate(self.sirens):
+            out.append(siren(circle[i]))
+        return torch.stack(out, dim=0)
     
-    def coeff_optim(self, basis, x):
-        A = torch.ones(basis.shape[:3]) / basis.shape[1] 
-        A = A[..., None, None]
-        A = nn.Parameter(A)
-        optim = Adam([A], lr=1e-1)
+    def coeff_optim(self, x):
+        b, c, h, w = x.shape
+        k = self.n_basis
+
+        # params to shift and scale basis
+        # we want to cycle shift each dim (think a torus)
+        mag = torch.randn(b, k**2, c).to(x.device)
+        shift = torch.rand(b, 2*k**2, c).to(x.device)
+        print(shift.shape)
+
+        #A = nn.Parameter(A)
+        #optim = Adam([A], lr=1e-1)
+
+        # stack of rows [0,1], we want 2 overlapping filters for n-basis^2 grid
+        # 1st filter is horizontal, 2nd is vertical (or vice versa?)
+        line = torch.linspace(0, 1, 32).to(x.device)
+        lines_w = repeat(line, 'w -> b k2 c h w', b=b, k2=k**2, c=c, h=h)
+        lines_h = repeat(line, 'h -> b k2 c h w', b=b, k2=k**2, c=c, w=w)
+        lines = torch.cat([lines_w, lines_h], dim=1)
+        print(lines.shape)
+        print(shift.shape)
+        quit()
+
+        # cyclically shift each row
+        pre = (lines + shift[..., None, None]) % 1
+        pre = rearrange(pre, 'b n c h w -> n (b c h w) 1')
+        circle = unit_circle(pre)
+
+        # get basis given domain provided
+        with torch.no_grad():
+            basis_line = self.circ2basis(circle) 
+
+        # add vertical and horizontal basis
+        basis_stack = rearrange(basis_line, 'n (b c h w) 1 -> b n c h w', b=b, c=c, h=h, w=w)
+        basis_w = basis_stack[:, :k**2]; basis_h = basis_stack[:, k**2:]
+        basis = basis_w + basis_h
+
+
 
         # send all to cuda
+        import time
+        t0 = time.time()
         for _ in range(50):
             # multiply basis by coefficients
             y = A * basis
@@ -77,6 +123,8 @@ class NbModel(nn.Module):
             optim.zero_grad()
             loss.backward()
             optim.step()
+        print(time.time()-t0)
+        quit()
 
         return A.detach()
 

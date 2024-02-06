@@ -22,10 +22,14 @@ if __name__ == '__main__':
     # get basis functions to plot
     b = 4
 
-    c = torch.ones(1, 3, 32, 32)
+    import time
+    t0 = time.time()
+    x = torch.randn(1, 3, 32, 32)
+    c = fft.fftn(x, dim=(-2, -1))
     c[..., b:, b:] = 0
+    print(c.shape)
     recon = fft.ifftn(c, dim=(-2, -1)).real
-    print(recon.shape)
+    print(time.time()-t0)
     quit()
 
     plot_basis(recon[0], 'fft_basis.png')
