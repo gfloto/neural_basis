@@ -3,9 +3,7 @@ import copy
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.func import stack_module_state, functional_call
 
-from functools import partial
 from einops import rearrange, repeat
 from siren_pytorch import SirenNet
 
@@ -50,29 +48,6 @@ class ResNet(torch.nn.Module):
             x = x + block(x)
         x = self.last(x)
         return x
-
-
-class NbModel(nn.Module):
-    def __init__(self, n_basis, dim_hidden, n_layers):
-        super().__init__()
-        self.n_basis = n_basis
-        self.n_hidden = dim_hidden
-
-
-        self.sirens = nn.ModuleList([
-            SirenNet(
-                dim_in=2,
-                dim_hidden=dim_hidden,
-                dim_out=1, num_layers=1,
-                w0_initial= (i % n_basis**2) + 2
-            )
-            for i in range(2*n_basis**2)
-        ])
-
-        #self.sirens = nn.ModuleList([
-            #ResNet(dim_hidden=dim_hidden, num_layers=n_layers)
-            #for i in range(2*n_basis**2)
-        #])
 
 
     # TODO: parallelize this! 
@@ -137,13 +112,16 @@ class NbModel(nn.Module):
         mag = torch.randn(b, k**2, c).to(x.device) / (2*k**2)
         shift = torch.rand(b, 2*k**2, c).to(x.device)
 
+        print(mag.shape, shift.shape)
+        quit()
+
         # optim
         mag = nn.Parameter(mag)
         shift = nn.Parameter(shift)
-        optim = Adam([mag, shift], lr=5e-2)
+        optim = Adam([mag, shift], lr=1e-2)
 
         # get optimal shift and scale to align basis 
-        for _ in range(30):
+        for _ in range(100):
             y = self.neural_recon(x, mag, shift)
 
             loss = (x - y).pow(2).mean()
