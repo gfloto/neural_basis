@@ -1,10 +1,24 @@
 import torch
 import torch.nn as nn
+import math
 from torch.optim import Adam
 from einops import rearrange, repeat
 from siren_pytorch import SirenNet
 
+from plot import plot_line
 from plot import plot_basis
+
+def unit_circle(angle):
+    '''
+    map line in [0,1] to x, y coordinates of unit circle 
+    '''
+
+    angle *= 2 * math.pi
+    x = torch.cos(angle)
+    y = torch.sin(angle)
+
+    return torch.cat([x, y], dim=-1)
+
 
 class NbModel(nn.Module):
     def __init__(self, n_basis, dim_hidden):
@@ -13,7 +27,7 @@ class NbModel(nn.Module):
         self.n_hidden = dim_hidden
 
         self.siren = SirenNet(
-            dim_in = 1,
+            dim_in = 2,
             dim_hidden = dim_hidden,
             dim_out = n_basis,
             num_layers = 12,
@@ -22,8 +36,10 @@ class NbModel(nn.Module):
 
     def forward(self, x, plot=False):
         bs = x.shape[0]
-        line = torch.linspace(-1, 1, 32)[..., None].to(x.device)
-        basis_line = self.siren(line)
+        line = torch.linspace(0, 1, 32)[..., None].to(x.device)
+
+        circle = unit_circle(line)
+        basis_line = self.siren(circle)
 
         # make into plane combining all combination of basis 
         (w, q) = basis_line.shape
@@ -33,7 +49,7 @@ class NbModel(nn.Module):
 
         # repeat along batch and color channels
         basis = repeat(basis[None, :, None, ...], '1 k 1 h w -> b k c h w', b=bs, c=3)
-        if plot: plot_basis(basis[0,:,0], 'basis.png')
+        if plot: plot_basis(basis[0,:,0], basis_line, 'basis.png')
 
         # find optimal coeffients for basis 
         A = self.coeff_optim(
@@ -64,10 +80,14 @@ class NbModel(nn.Module):
 
         return A.detach()
 
-    def orthon_sample(self, n_samples, device='cuda'):
+    def orthon_sample(self, n_samples, device='cuda', plot=False):
         # sample random point in [0,1]
         x = torch.rand(n_samples)[..., None].to(device)
-        y = rearrange(self.siren(x), 'n k -> k n')
+        circle = unit_circle(x)
+        y = rearrange(self.siren(circle), 'n k -> k n')
+        x = rearrange(x, 'n k -> k n')
+
+        if plot: plot_line(x.detach(), y.detach(), 'line.png')
 
         # compute inner product of all pairs
         ip = (y @ y.T) / n_samples

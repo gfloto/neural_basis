@@ -67,7 +67,7 @@ if __name__ == '__main__':
             recon = (x - y).pow(2).mean() 
 
             # encourage orthonormality
-            ortho = model.orthon_sample(hps.n_ortho, device=hps.device)
+            ortho = model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
             loss = recon + ortho
 
             optim.zero_grad()
