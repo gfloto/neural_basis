@@ -25,6 +25,7 @@ def pb(x, i, path):
             axs[i, j].imshow(x[i*n+j], cmap=cmap)
             axs[i, j].axis('off')
 
+    plt.tight_layout()
     plt.savefig(path)
     plt.close()
 
@@ -50,6 +51,7 @@ def plot_recon(x, y, z):
     ax2.axis('off')
     ax3.axis('off')
 
+    plt.tight_layout()
     plt.savefig(f'nb.png')
     plt.close()
 
@@ -68,5 +70,7 @@ def plot_line(x, y_w, y_h, path):
     for i in range(y_h.shape[0]):
         ax1.plot(x, y_w[i], alpha=0.5)
         ax2.plot(x, y_h[i], alpha=0.5)
+
+    plt.tight_layout()
     plt.savefig(path)
     plt.close()

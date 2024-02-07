@@ -1,23 +1,24 @@
 import os
 import argparse
-from einops import repeat
+from einops import repeat, rearrange
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.optim import Adam
 import matplotlib.pyplot as plt
 
-from fourier_basis import fft_compression
-from neural_basis import NbModel
 from plot import plot_recon
+from models import CoeffModel
+from neural_basis import NbModel
+from fourier_basis import fft_compression
 
 def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--lr', type=float, default=1e-4)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--n_ortho', type=int, default=int(1e3))
 
@@ -47,10 +48,16 @@ if __name__ == '__main__':
     #percept_loss = lpips.LPIPS(net='alex')
 
     # make neural basis model to train
-    model = NbModel(hps.n_basis, hps.dim_hidden, hps.n_layers).to(hps.device)
-    print(f'params: {sum(p.numel() for p in model.parameters())}')
+    nb_model = NbModel(hps.n_basis, hps.dim_hidden, hps.n_layers).to(hps.device)
+    print(f'neural basis params: {sum(p.numel() for p in nb_model.parameters())}')
 
-    optim = Adam(model.parameters(), lr=hps.lr)
+    coeff_model = CoeffModel(hps.n_basis).to(hps.device)
+    print(f'coeff model params: {sum(p.numel() for p in coeff_model.parameters())}')
+
+    optim = Adam(
+        params=list(nb_model.parameters()) + list(coeff_model.parameters()),
+        lr=hps.lr
+    )
 
     # if model and optimizer exist, load them
     if os.path.exists(f'{hps.exp_path}/model.pth'):
@@ -58,7 +65,7 @@ if __name__ == '__main__':
         #model.load_state_dict(torch.load(f'{hps.exp_path}/model.pth'))
         #optim.load_state_dict(torch.load(f'{hps.exp_path}/optim.pth'))
 
-    freq = 25
+    freq = 100
     while True:
         rl, ol = [], []
         print('fresh epoch')
@@ -68,13 +75,21 @@ if __name__ == '__main__':
             x = 2*x - 1
 
             # get reconstruction
-            mag, shift = model.coeff_optim(x)
-            y = model(x, mag, shift, plot=plot)
+            #mag, shift = model.coeff_optim(x)
+            mag_shift = coeff_model(x)
 
+            m = 3*hps.n_basis**2
+            mag = mag_shift[:, :m]
+            shift = mag_shift[:, m:]
+
+            mag = rearrange(mag, 'b (k c) -> b k c', k=hps.n_basis**2, c=3)
+            shift = rearrange(shift, 'b (k c) -> b k c', k=2*hps.n_basis**2, c=3)
+
+            y = nb_model(x, mag, shift, plot=plot)
             recon = (x - y).pow(2).mean() 
 
             # encourage orthonormality
-            ortho = model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
+            ortho = nb_model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
             loss = recon #+ 1e-2*ortho
 
             optim.zero_grad()
@@ -98,5 +113,6 @@ if __name__ == '__main__':
                 )
 
         # save model and optimizer
-        torch.save(model.state_dict(), f'{hps.exp_path}/model.pth')
+        torch.save(nb_model.state_dict(), f'{hps.exp_path}/nb_model.pth')
+        torch.save(coeff_model.state_dict(), f'{hps.exp_path}/coeff_model.pth')
         torch.save(optim.state_dict(), f'{hps.exp_path}/optim.pth')
