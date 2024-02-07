@@ -21,34 +21,22 @@ def unit_circle(angle):
 
     return torch.cat([x, y], dim=-1)
 
-class ResNet(torch.nn.Module):
-    def __init__(self, dim_hidden, num_layers):
+class NbModel(nn.Module):
+    def __init__(self, n_basis, dim_hidden, n_layers):
         super().__init__()
-        '''
-        a small resnet that maps [128] -> [2]
-        '''
-        self.dim_hidden = dim_hidden
-        self.num_layers = num_layers
+        self.n_basis = n_basis
+        self.n_hidden = dim_hidden
 
-        self.first = nn.Linear(2, self.dim_hidden)
 
-        self.res_block = nn.Sequential(
-            nn.Linear(self.dim_hidden, self.dim_hidden),
-            nn.ELU(),
-            nn.Linear(self.dim_hidden, self.dim_hidden),
-        ) 
-
-        self.last = nn.Linear(self.dim_hidden, 1)
-
-        self.blocks = nn.ModuleList([copy.deepcopy(self.res_block) for _ in range(num_layers)])
-
-    def forward(self, x):
-        x = self.first(x)
-        for block in self.blocks:
-            x = x + block(x)
-        x = self.last(x)
-        return x
-
+        self.sirens = nn.ModuleList([
+            SirenNet(
+                dim_in=2,
+                dim_hidden=dim_hidden,
+                dim_out=1, num_layers=1,
+                w0_initial= (i % n_basis**2) + 2
+            )
+            for i in range(2*n_basis**2)
+        ])
 
     # TODO: parallelize this! 
     def circ2basis(self, circle, grad=False):
@@ -103,35 +91,6 @@ class ResNet(torch.nn.Module):
         y = scaled_basis.sum(dim=1)
         return y
 
-    def coeff_optim(self, x):
-        b, c, h, w = x.shape
-        k = self.n_basis
-
-        # params to shift and scale basis
-        # we want to cycle shift each dim (think a torus)
-        mag = torch.randn(b, k**2, c).to(x.device) / (2*k**2)
-        shift = torch.rand(b, 2*k**2, c).to(x.device)
-
-        print(mag.shape, shift.shape)
-        quit()
-
-        # optim
-        mag = nn.Parameter(mag)
-        shift = nn.Parameter(shift)
-        optim = Adam([mag, shift], lr=1e-2)
-
-        # get optimal shift and scale to align basis 
-        for _ in range(100):
-            y = self.neural_recon(x, mag, shift)
-
-            loss = (x - y).pow(2).mean()
-
-            optim.zero_grad()
-            loss.backward()
-            optim.step()
-
-        return mag.detach(), shift.detach()
-
     def orthon_sample(self, n_samples, device='cuda', plot=False):
         # sample random point in [0,1]
         x = torch.rand(n_samples)[..., None].to(device)
@@ -152,3 +111,31 @@ class ResNet(torch.nn.Module):
         # orthonormally coresponds to identity
         orthon_loss = triu_ip.pow(2).mean()
         return orthon_loss
+
+    def coeff_optim(self, x):
+        b, c, h, w = x.shape
+        k = self.n_basis
+
+        # params to shift and scale basis
+        # we want to cycle shift each dim (think a torus)
+        mag = torch.randn(b, k**2, c).to(x.device) / (2*k**2)
+        shift = torch.rand(b, 2*k**2, c).to(x.device)
+        print(mag.shape, shift.shape)
+        quit()
+
+        # optim
+        mag = nn.Parameter(mag)
+        shift = nn.Parameter(shift)
+        optim = Adam([mag, shift], lr=1e-2)
+
+        # get optimal shift and scale to align basis 
+        for _ in range(100):
+            y = self.neural_recon(x, mag, shift)
+
+            loss = (x - y).pow(2).mean()
+
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
+
+        return mag.detach(), shift.detach()
