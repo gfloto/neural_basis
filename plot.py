@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 
-def plot_basis(x, line, path):
+def plot_basis(x, path):
     '''
     x : [n**2, 32, 32]
     we want to plot an n x n grid of images
@@ -19,7 +19,7 @@ def plot_basis(x, line, path):
     plt.close()
 
 
-def plot_recon(x, y, z):
+def plot_recon(x, y, z, path):
     y = y.clamp(0, 1)
     z = z.clamp(0, 1)
 
@@ -36,7 +36,7 @@ def plot_recon(x, y, z):
     ax2.axis('off')
     ax3.axis('off')
 
-    plt.savefig(f'nb.png')
+    plt.savefig(path)
     plt.close()
 
 def plot_line(x, y, path):

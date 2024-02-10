@@ -30,13 +30,15 @@ class NbModel(nn.Module):
             dim_in = 2,
             dim_hidden = dim_hidden,
             dim_out = n_basis,
-            num_layers = 12,
+            num_layers = 4,
             w0_initial = 30.
         )
 
     def forward(self, x, plot=False):
         bs = x.shape[0]
         line = torch.linspace(0, 1, 32)[..., None].to(x.device)
+        print(line.shape)
+        quit()
 
         circle = unit_circle(line)
         basis_line = self.siren(circle)
