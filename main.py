@@ -1,27 +1,30 @@
 import os
 import argparse
-from einops import repeat
+from einops import repeat, rearrange
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.optim import Adam
 import matplotlib.pyplot as plt
 
-from fourier_basis import fft_compression
-from neural_basis import NbModel
 from plot import plot_recon
+from models import CoeffModel
+from neural_basis import NbModel
+from fourier_basis import fft_compression
 
 def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=1e-5)
+    parser.add_argument('--lr', type=float, default=1e-4)
+    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--n_ortho', type=int, default=int(1e3))
+
     parser.add_argument('--n_basis', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=3)
     parser.add_argument('--dim_hidden', type=int, default=64)
-    parser.add_argument('--n_ortho', type=int, default=int(1e4))
-    parser.add_argument('--device', type=str, default='cpu')
 
     return parser.parse_args()
 
@@ -45,8 +48,16 @@ if __name__ == '__main__':
     #percept_loss = lpips.LPIPS(net='alex')
 
     # make neural basis model to train
-    model = NbModel(hps.n_basis, hps.dim_hidden).to(hps.device)
-    optim = Adam(model.parameters(), lr=hps.lr)
+    nb_model = NbModel(hps.n_basis, hps.dim_hidden, hps.n_layers).to(hps.device)
+    print(f'neural basis params: {sum(p.numel() for p in nb_model.parameters())}')
+
+    coeff_model = CoeffModel(hps.n_basis).to(hps.device)
+    print(f'coeff model params: {sum(p.numel() for p in coeff_model.parameters())}')
+
+    optim = Adam(
+        params=list(nb_model.parameters()) + list(coeff_model.parameters()),
+        lr=hps.lr
+    )
 
     # if model and optimizer exist, load them
     if os.path.exists(f'{hps.exp_path}/model.pth'):
@@ -54,21 +65,22 @@ if __name__ == '__main__':
         #model.load_state_dict(torch.load(f'{hps.exp_path}/model.pth'))
         #optim.load_state_dict(torch.load(f'{hps.exp_path}/optim.pth'))
 
-    freq = 20
+    freq = 100
     while True:
         rl, ol = [], []
         print('fresh epoch')
         for i, (x, _) in enumerate(loader):
             plot = i % freq == 0
             x = x.to(hps.device)
+            x = 2*x - 1
 
             # get reconstruction
             y = model(x, plot=plot) 
             recon = (x - y).pow(2).mean() 
 
             # encourage orthonormality
-            ortho = model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
-            loss = recon + ortho
+            ortho = nb_model.orthon_sample(hps.n_ortho, device=hps.device, plot=plot)
+            loss = recon #+ 1e-2*ortho
 
             optim.zero_grad()
             loss.backward()
@@ -76,6 +88,7 @@ if __name__ == '__main__':
 
             rl.append(recon.item())
             ol.append(ortho.item())
+            ol.append(0)
 
             if i % freq == 0:
                 print(f'recon: {sum(rl)/len(rl):.4f}, ortho: {sum(ol)/len(ol):.4f}')
@@ -90,5 +103,6 @@ if __name__ == '__main__':
                 )
 
         # save model and optimizer
-        torch.save(model.state_dict(), f'{hps.exp_path}/model.pth')
+        torch.save(nb_model.state_dict(), f'{hps.exp_path}/nb_model.pth')
+        torch.save(coeff_model.state_dict(), f'{hps.exp_path}/coeff_model.pth')
         torch.save(optim.state_dict(), f'{hps.exp_path}/optim.pth')

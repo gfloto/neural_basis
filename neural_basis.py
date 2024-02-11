@@ -1,7 +1,9 @@
+import math
+import copy
 import torch
 import torch.nn as nn
-import math
 from torch.optim import Adam
+
 from einops import rearrange, repeat
 from siren_pytorch import SirenNet
 
@@ -19,13 +21,13 @@ def unit_circle(angle):
 
     return torch.cat([x, y], dim=-1)
 
-
 class NbModel(nn.Module):
-    def __init__(self, n_basis, dim_hidden):
+    def __init__(self, n_basis, dim_hidden, n_layers):
         super().__init__()
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
 
+<<<<<<< HEAD
         self.siren = SirenNet(
             dim_in = 2,
             dim_hidden = dim_hidden,
@@ -39,40 +41,112 @@ class NbModel(nn.Module):
         line = torch.linspace(0, 1, 32)[..., None].to(x.device)
         print(line.shape)
         quit()
+=======
 
-        circle = unit_circle(line)
-        basis_line = self.siren(circle)
+        self.sirens = nn.ModuleList([
+            SirenNet(
+                dim_in=2,
+                dim_hidden=dim_hidden,
+                dim_out=1, num_layers=1,
+                w0_initial= (i % n_basis**2) + 2
+            )
+            for i in range(2*n_basis**2)
+        ])
+>>>>>>> origin/main
 
-        # make into plane combining all combination of basis 
-        (w, q) = basis_line.shape
-        bl_x = repeat(basis_line[None, None, ...], '1 1 h k -> k q h w', w=w, q=q)
-        bl_y = repeat(basis_line[None, None, ...], '1 1 h k -> q k w h', w=w, q=q)
-        basis = rearrange(bl_x + bl_y, 'k q h w -> (k q) h w')
+    # TODO: parallelize this! 
+    def circ2basis(self, circle, grad=False):
+        out = []
+        if grad:
+            for i, siren in enumerate(self.sirens):
+                out.append(siren(circle[i]))
+        else:
+            with torch.no_grad():
+                for i, siren in enumerate(self.sirens):
+                    out.append(siren(circle[i]))
+        return torch.stack(out, dim=0)
 
-        # repeat along batch and color channels
-        basis = repeat(basis[None, :, None, ...], '1 k 1 h w -> b k c h w', b=bs, c=3)
-        if plot: plot_basis(basis[0,:,0], basis_line, 'basis.png')
-
-        # find optimal coeffients for basis 
-        A = self.coeff_optim(
-            basis.detach().clone().cpu(),
-            x.detach().clone().cpu()
-        ).to(x.device)
-        y = (A * basis).sum(dim=1)
-
+    def forward(self, x, mag, shift, plot):
+        y = self.neural_recon(x, mag, shift, plot, grad=True)
         return y
     
-    def coeff_optim(self, basis, x):
-        A = torch.ones(basis.shape[:3]) / basis.shape[1] 
-        A = A[..., None, None]
-        A = nn.Parameter(A)
-        optim = Adam([A], lr=1e-1)
+    def neural_recon(self, x, mag, shift, plot=False, grad=False):
+        b, c, h, w = x.shape
+        k = self.n_basis
 
-        # send all to cuda
-        for _ in range(50):
-            # multiply basis by coefficients
-            y = A * basis
-            y = y.sum(dim=1)
+        # each image gets 2 groups of k**2 basis functions
+        # the group are vertically and horizontally oriented and added
+        line = torch.linspace(0, 1, 32).to(x.device)
+        lines_w = repeat(line, 'w -> b k2 c w', b=b, k2=k**2, c=c)
+        lines_h = repeat(line, 'h -> b k2 c h', b=b, k2=k**2, c=c)
+        lines = torch.cat([lines_w, lines_h], dim=1)
+
+        # cyclically shift each line independently
+        pre = (lines + shift[..., None]) % 1
+        pre = rearrange(pre, 'b n c f -> n (b c f) 1')
+
+        # map [0,1] to x,y unit circle coords (for nn continuity)
+        circle = unit_circle(pre.clone())
+
+        # get basis given domain provided
+        basis_line = self.circ2basis(circle, grad)
+
+        # add vertical and horizontal basis
+        basis_stack = rearrange(basis_line, 'n (b c f) 1 -> b n c f', b=b, c=c, f=h)
+        basis_w = basis_stack[:, :k**2]; basis_h = basis_stack[:, k**2:]
+
+        # create vertically and horizontally oriented 2d basis
+        basis_w = repeat(basis_w, 'b k c w -> b k c h w', h=h, w=w)
+        basis_h = repeat(basis_h, 'b k c h -> b k c h w', h=h, w=w)
+
+        basis = basis_w + basis_h
+        if plot: plot_basis(basis[0], 'basis.png')
+
+        # scale basis
+        scaled_basis = basis * mag[..., None, None]
+        y = scaled_basis.sum(dim=1)
+        return y
+
+    def orthon_sample(self, n_samples, device='cuda', plot=False):
+        # sample random point in [0,1]
+        x = torch.rand(n_samples)[..., None].to(device)
+        x = repeat(x, 'n 1 -> k n 1', k=2*self.n_basis**2)
+
+        circle = unit_circle(x.clone())
+        y = self.circ2basis(circle, grad=True)
+
+        x = x[..., -1]; y = y[..., -1]
+        y_w = y[:self.n_basis**2]; y_h = y[self.n_basis**2:]
+
+        if plot: plot_line(x[0].detach(), y_w.detach(), y_h.detach(), 'line.png')
+
+        # compute inner product of all pairs
+        ip = ( (y_w @ y_w.T) + (y_h @ y_h.T) ) / n_samples 
+        triu_ip = torch.triu(ip, diagonal=0)
+
+        # orthonormally coresponds to identity
+        orthon_loss = triu_ip.pow(2).mean()
+        return orthon_loss
+
+    def coeff_optim(self, x):
+        b, c, h, w = x.shape
+        k = self.n_basis
+
+        # params to shift and scale basis
+        # we want to cycle shift each dim (think a torus)
+        mag = torch.randn(b, k**2, c).to(x.device) / (2*k**2)
+        shift = torch.rand(b, 2*k**2, c).to(x.device)
+        print(mag.shape, shift.shape)
+        quit()
+
+        # optim
+        mag = nn.Parameter(mag)
+        shift = nn.Parameter(shift)
+        optim = Adam([mag, shift], lr=1e-2)
+
+        # get optimal shift and scale to align basis 
+        for _ in range(100):
+            y = self.neural_recon(x, mag, shift)
 
             loss = (x - y).pow(2).mean()
 
@@ -80,23 +154,4 @@ class NbModel(nn.Module):
             loss.backward()
             optim.step()
 
-        return A.detach()
-
-    def orthon_sample(self, n_samples, device='cuda', plot=False):
-        # sample random point in [0,1]
-        x = torch.rand(n_samples)[..., None].to(device)
-        circle = unit_circle(x)
-        y = rearrange(self.siren(circle), 'n k -> k n')
-        x = rearrange(x, 'n k -> k n')
-
-        if plot: plot_line(x.detach(), y.detach(), 'line.png')
-
-        # compute inner product of all pairs
-        ip = (y @ y.T) / n_samples
-        triu_ip = torch.triu(ip, diagonal=0)
-
-        # orthonormally coresponds to identity
-        tgt = torch.eye(triu_ip.shape[0]).to(device)
-        orthon_loss = (triu_ip - tgt).pow(2).mean()
-
-        return orthon_loss
+        return mag.detach(), shift.detach()
