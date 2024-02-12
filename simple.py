@@ -9,8 +9,10 @@ slow discrete fourier transform using torch
 
 if __name__ == '__main__':
     # get image from cifar10 loader
-    loader = cifar10_loader(1)
-    x, _ = next(iter(loader))
+    #loader = cifar10_loader(1)
+    #x, _ = next(iter(loader))
+
+    
 
     print(x.shape)
     quit()
