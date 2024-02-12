@@ -30,7 +30,7 @@ def get_hps():
 def cifar10_loader(batch_size):
     dataset = datasets.CIFAR10(
         root='./data', train=True, 
-        download=True, transform=transforms.ToTensor()
+        download=False, transform=transforms.ToTensor()
     )
 
     loader = torch.utils.data.DataLoader(

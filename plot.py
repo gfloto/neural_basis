@@ -33,7 +33,10 @@ def pb(x, i, path):
     plt.close()
 
 
-def plot_recon(x, y, z):
+def plot_recon(x, y, z, path):
+    y = y.clamp(0, 1)
+    z = z.clamp(0, 1)
+
     fig = plt.figure(figsize=(9,3))
     ax1 = fig.add_subplot(131)
     ax2 = fig.add_subplot(132)
@@ -54,6 +57,7 @@ def plot_recon(x, y, z):
     ax2.axis('off')
     ax3.axis('off')
 
+    plt.savefig(path)
     plt.tight_layout()
     plt.savefig('imgs/nb.png')
     plt.close()

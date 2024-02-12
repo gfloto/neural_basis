@@ -28,6 +28,21 @@ class NbModel(nn.Module):
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
 
+<<<<<<< HEAD
+        self.siren = SirenNet(
+            dim_in = 2,
+            dim_hidden = dim_hidden,
+            dim_out = n_basis,
+            num_layers = 4,
+            w0_initial = 30.
+        )
+
+    def forward(self, x, plot=False):
+        bs = x.shape[0]
+        line = torch.linspace(0, 1, 32)[..., None].to(x.device)
+        print(line.shape)
+        quit()
+=======
 
         self.sirens = nn.ModuleList([
             SirenNet(
@@ -38,6 +53,7 @@ class NbModel(nn.Module):
             )
             for i in range(2*n_basis**2 - 1)
         ])
+>>>>>>> origin/main
 
     # TODO: parallelize this! 
     def torus2basis(self, torus):
