@@ -1,17 +1,20 @@
+import torch
 import matplotlib.pyplot as plt
 
-def plot_basis(x, path):
+def plot_basis(x, path='basis'):
     '''
-    x : [n**2, 3, 32, 32]
+    x : [2*n**2, 3, 32, 32]
     we want to plot an n x n grid of images
     '''
 
     for i in range(x.shape[1]):
-        pb(x[:, i], i, f'{path}_{i}.png')
+        pb(x[:, i], i, f'imgs/{path}_{i}.png')
 
 def pb(x, i, path):
-    n = int(x.shape[0] ** 0.5)
-    x = x.detach().cpu()
+    # first filter is zeros
+    zero = torch.zeros_like(x[0])
+    x = torch.cat([zero[None], x], dim=0)
+    n = int( ((x.shape[0])/2) ** 0.5 )
 
     # r g b
     if i == 0: cmap = 'Reds'
@@ -19,9 +22,9 @@ def pb(x, i, path):
     elif i == 2: cmap = 'Blues'
     else: raise ValueError('invalid channel')
 
-    fig, axs = plt.subplots(n, n, figsize=(10, 10))
+    fig, axs = plt.subplots(n, 2*n, figsize=(10, 5))
     for i in range(n):
-        for j in range(n):
+        for j in range(2*n):
             axs[i, j].imshow(x[i*n+j], cmap=cmap)
             axs[i, j].axis('off')
 
@@ -30,14 +33,10 @@ def pb(x, i, path):
     plt.close()
 
 
-<<<<<<< HEAD
 def plot_recon(x, y, z, path):
     y = y.clamp(0, 1)
     z = z.clamp(0, 1)
 
-=======
-def plot_recon(x, y, z):
->>>>>>> origin/main
     fig = plt.figure(figsize=(9,3))
     ax1 = fig.add_subplot(131)
     ax2 = fig.add_subplot(132)
@@ -58,12 +57,9 @@ def plot_recon(x, y, z):
     ax2.axis('off')
     ax3.axis('off')
 
-<<<<<<< HEAD
     plt.savefig(path)
-=======
     plt.tight_layout()
-    plt.savefig(f'nb.png')
->>>>>>> origin/main
+    plt.savefig('imgs/nb.png')
     plt.close()
 
 def plot_line(x, y_w, y_h, path):
