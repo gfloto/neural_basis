@@ -58,11 +58,6 @@ def plot_recon(x, y, z, path):
     ax3.axis('off')
 
     plt.savefig(path)
-<<<<<<< HEAD
-=======
-    plt.tight_layout()
-    plt.savefig('imgs/nb.png')
->>>>>>> 9c38d717b727e89690058558689c3de77594a45b
     plt.close()
 
 def plot_line(x, y_w, y_h, path):
