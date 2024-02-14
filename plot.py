@@ -1,14 +1,15 @@
+import os
 import torch
 import matplotlib.pyplot as plt
 
-def plot_basis(x, path='basis'):
+def plot_basis(x, path):
     '''
     x : [2*n**2, 3, 32, 32]
     we want to plot an n x n grid of images
     '''
 
     for i in range(x.shape[1]):
-        pb(x[:, i], i, f'imgs/{path}_{i}.png')
+        pb(x[:, i], i, os.path.join(path, f'basis_{i}.png'))
 
 def pb(x, i, path):
     # first filter is zeros
@@ -57,25 +58,5 @@ def plot_recon(x, y, z, path):
     ax2.axis('off')
     ax3.axis('off')
 
-    plt.savefig(path)
-    plt.close()
-
-def plot_line(x, y_w, y_h, path):
-    # get idx to sort x
-    idx = x.argsort()
-
-    x = x[idx].cpu()
-    y_w = y_w[:, idx].cpu()
-    y_h = y_h[:, idx].cpu()
-
-    fig = plt.figure(figsize=(10, 5))
-    ax1 = fig.add_subplot(121)
-    ax2 = fig.add_subplot(122)
-
-    for i in range(y_h.shape[0]):
-        ax1.plot(x, y_w[i], alpha=0.5)
-        ax2.plot(x, y_h[i], alpha=0.5)
-
-    plt.tight_layout()
     plt.savefig(path)
     plt.close()

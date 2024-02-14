@@ -1,12 +1,10 @@
 import math
 import torch
 import torch.nn as nn
-from torch.optim import Adam
 
 from einops import rearrange, repeat
 from siren_pytorch import SirenNet
 
-from plot import plot_line
 from plot import plot_basis
 
 def unit_circle(angle):
@@ -28,21 +26,6 @@ class NbModel(nn.Module):
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
 
-<<<<<<< HEAD
-        self.siren = SirenNet(
-            dim_in = 2,
-            dim_hidden = dim_hidden,
-            dim_out = n_basis,
-            num_layers = 4,
-            w0_initial = 30.
-        )
-
-    def forward(self, x, plot=False):
-        bs = x.shape[0]
-        line = torch.linspace(0, 1, 32)[..., None].to(x.device)
-        print(line.shape)
-        quit()
-=======
 
         self.sirens = nn.ModuleList([
             SirenNet(
@@ -53,7 +36,6 @@ class NbModel(nn.Module):
             )
             for i in range(2*n_basis**2 - 1)
         ])
->>>>>>> origin/main
 
     # TODO: parallelize this! 
     def torus2basis(self, torus):
@@ -62,7 +44,7 @@ class NbModel(nn.Module):
             out.append(siren(torus)[..., 0])
         return torch.stack(out, dim=0)
 
-    def forward(self, x, plot):
+    def forward(self, x, plot_path=None):
         b, c, h, w = x.shape
         k = self.n_basis
 
@@ -81,7 +63,7 @@ class NbModel(nn.Module):
         stack_basis = self.torus2basis(stack)
         basis = rearrange(stack_basis, 'k (c h w) -> k c h w', c=c, h=h, w=w)
 
-        if plot: plot_basis(basis.detach().cpu())
+        if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
 
         # get coeffs
         coeffs = torch.einsum('k c h w, b c h w -> b k c', basis, x)
