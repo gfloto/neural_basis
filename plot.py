@@ -2,6 +2,32 @@ import os
 import torch
 import matplotlib.pyplot as plt
 
+def make_gif(imgs, path):
+    '''
+    imgs is a tensor of [n, w, h]
+    this function make a gif with n frames
+    save each frame to path, then use imagemagick to make gif
+    '''
+
+    # make directory
+    os.makedirs('temp', exist_ok=True)
+
+    # save each frame
+    for i in range(imgs.shape[0]):
+        plt.imshow(imgs[i], cmap='inferno')
+        plt.axis('off')
+        num = str(i).zfill(3)
+        plt.savefig(f'temp/{num}.png')
+        plt.close()
+
+    # make gif
+    os.system(f'convert -delay 10 temp/*.png {path}')
+    os.system('rm -r temp')
+
+    print('done')
+    quit()
+    
+
 def plot_basis(x, path):
     '''
     x : [2*n**2, 3, 32, 32]
