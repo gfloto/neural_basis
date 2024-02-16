@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 
 from einops import rearrange, repeat
-from siren_pytorch import SirenNet
+from models.siren import SirenNet
 
 from plot import plot_basis
 
@@ -25,28 +25,43 @@ class NbModel(nn.Module):
         super().__init__()
         self.n_basis = n_basis
         self.n_hidden = dim_hidden
+        self.ensembles = 2*n_basis**2 - 1
 
+        w = torch.ones((self.ensembles,)).float()
+        #w0 = torch.ones((self.ensembles,)).float()
+        #w = torch.tensor([i/12 + 1 for i in range(self.ensembles)]).float()
+        w0 = torch.tensor([i/12 + 1 for i in range(self.ensembles)]).float()
 
-        self.sirens = nn.ModuleList([
-            SirenNet(
-                dim_in=4, # x and y both are have 2d coords
-                dim_hidden=dim_hidden,
-                dim_out=1, num_layers=n_layers,
-                w0_initial= i/12 + 1
-            )
-            for i in range(2*n_basis**2 - 1)
-        ])
+        self.siren = SirenNet(
+            ensembles = self.ensembles,
+            dim_in = 4, # x and y both are have 2d coords
+            dim_hidden = dim_hidden,
+            dim_out = 1, num_layers=n_layers,
+            w0_initial= w0,
+            w0 = w
+        )
+
+        #self.sirens = nn.ModuleList([
+            #SirenNet(
+                #dim_in=4, # x and y both are have 2d coords
+                #dim_hidden=dim_hidden,
+                #dim_out=1, num_layers=n_layers,
+                #w0_initial= i/12 + 1
+            #)
+            #for i in range(2*n_basis**2 - 1)
+        #])
 
     # TODO: parallelize this! 
     def torus2basis(self, torus):
-        out = []
-        for i, siren in enumerate(self.sirens):
-            out.append(siren(torus)[..., 0])
-        return torch.stack(out, dim=0)
+        #out = []
+        #for i, siren in enumerate(self.sirens):
+            #out.append(siren(torus)[..., 0])
+        #return torch.stack(out, dim=0)
+
+        return self.siren(torus)
 
     def forward(self, x, plot_path=None):
         b, c, h, w = x.shape
-        k = self.n_basis
 
         # each image gets 2 groups of k**2 basis functions
         line_x = torch.linspace(0, 1, 32).to(x.device)
@@ -56,12 +71,13 @@ class NbModel(nn.Module):
 
         # map [0,1] to x,y unit torus coords (for nn continuity)
         torus_grid = unit_circle(grid)
-        torus_grid = repeat(torus_grid, 'h w d -> c h w d', c=3)
+        torus_grid = repeat(torus_grid, 'h w d -> c h w d', c=c)
 
         # get basis given domain provided
         stack = rearrange(torus_grid, 'c h w d -> (c h w) d')
-        stack_basis = self.torus2basis(stack)
-        basis = rearrange(stack_basis, 'k (c h w) -> k c h w', c=c, h=h, w=w)
+        ensemble_stack = repeat(stack, 's d -> s k d', k=self.ensembles)
+        stack_basis = self.torus2basis(ensemble_stack)
+        basis = rearrange(stack_basis, '(c h w) k 1 -> k c h w', c=c, h=h, w=w)
 
         if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
 
@@ -79,7 +95,9 @@ class NbModel(nn.Module):
         torus_x = unit_circle(x)
 
         # get output of each basis function
-        basis = self.torus2basis(torus_x)
+        torus_stack = repeat(torus_x, 's d -> s k d', k=self.ensembles)
+        basis = self.torus2basis(torus_stack)
+        basis = rearrange(basis, 's k 1 -> k s')
 
         # each basis filter should sum to 1
         integral = basis.sum(dim=(1)).abs() / basis.shape[1]

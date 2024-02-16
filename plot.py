@@ -52,7 +52,7 @@ def pb(x, i, path):
     fig, axs = plt.subplots(n, 2*n, figsize=(10, 5))
     for i in range(n):
         for j in range(2*n):
-            axs[i, j].imshow(x[i*n+j], cmap=cmap)
+            axs[i, j].imshow(x[i+n*j], cmap=cmap)
             axs[i, j].axis('off')
 
     plt.tight_layout()
