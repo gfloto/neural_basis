@@ -27,7 +27,8 @@ def train(nb_model, loader, optim, percept_loss, hps, freq=100):
             nb_lpips = percept_loss(x, nb_y).mean()
 
             # encourage orthonormality
-            ortho = nb_model.orthon_sample(hps.n_ortho, device=hps.device)
+            #ortho = nb_model.orthon_sample(hps.n_ortho, device=hps.device)
+            ortho = torch.tensor(0).cuda()
 
             loss = nb_nll + nb_lpips / 5 + ortho
 

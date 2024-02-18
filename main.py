@@ -16,14 +16,14 @@ def get_hps():
     parser.add_argument('--exp_path', type=str, default='dev')
     parser.add_argument('--test', type=bool, default=False)
 
-    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--lr', type=float, default=5e-4)
+    parser.add_argument('--lr', type=float, default=2e-5)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--n_ortho', type=int, default=int(1e4))
 
-    parser.add_argument('--n_basis', type=int, default=12)
-    parser.add_argument('--n_layers', type=int, default=5)
+    parser.add_argument('--n_basis', type=int, default=4)
+    parser.add_argument('--n_layers', type=int, default=2)
     parser.add_argument('--dim_hidden', type=int, default=64)
 
     return parser.parse_args()
@@ -63,7 +63,7 @@ if __name__ == '__main__':
     # if model and optimizer exist, load them
     if os.path.exists(f'{hps.exp_path}/nb_model.pt'):
         print('loading model and optimizer')
-        #nb_model.load_state_dict(torch.load(f'{hps.exp_path}/nb_model.pt'))
+        nb_model.load_state_dict(torch.load(f'{hps.exp_path}/nb_model.pt'))
 
     if not hps.test:
         train(nb_model, loader, optim, percept_loss, hps)

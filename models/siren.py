@@ -7,12 +7,11 @@ def exists(val):
     return val is not None
 
 class Sine(nn.Module):
-    def __init__(self, ensembles, dim_out):
+    def __init__(self, w0):
         super().__init__()
-        w0 = torch.ones((ensembles, dim_out))
-        self.w0 = nn.Parameter(w0).cuda()
+        self.w0 = w0.cuda()
     def forward(self, x):
-        return torch.sin(x * self.w0[None, ...])
+        return torch.sin(x * self.w0[None, :, None])
 
 class SirenLayer(nn.Module):
     def __init__(
@@ -37,17 +36,8 @@ class SirenLayer(nn.Module):
         self.weight = nn.Parameter(weight)
         self.bias = nn.Parameter(bias) if use_bias else None
 
-        # randomly use one of the following activations 
-        acts = {
-            0 : Sine(ensembles, dim_out),
-            1 : nn.ELU(),
-            2 : nn.Hardshrink(),
-            4 : nn.ELU(),
-            3 : nn.Sigmoid(),
-            #4 : Sine(ensembles, dim_out),
-        }
-        self.activation = acts[layer]
-        print(layer)
+        self.activation = Sine(w0)
+
 
     def init_(self, weight, bias, w0, c=6):
         dim = self.dim_in
@@ -62,6 +52,8 @@ class SirenLayer(nn.Module):
 
     def forward(self, x):
         out = torch.einsum('eio,bei->beo', self.weight, x)
+        o_ = x[:,0,:] @ self.weight[0]
+        o = out[:,0,:]
 
         if exists(self.bias):
             out += self.bias[None, ...]

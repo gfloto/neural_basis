@@ -18,8 +18,6 @@ def unit_circle(angle):
 
     return torch.cat([x, y], dim=-1)
 
-import copy
-from torch.func import stack_module_state, functional_call
 class NbModel(nn.Module):
     def __init__(self, n_basis, dim_hidden, n_layers):
         super().__init__()
@@ -27,10 +25,9 @@ class NbModel(nn.Module):
         self.n_hidden = dim_hidden
         self.ensembles = 2*n_basis**2 - 1
 
+        #w0 = torch.tensor([i/2 + 1 for i in range(self.ensembles)]).float()
         w = torch.ones((self.ensembles,)).float()
-        #w0 = torch.ones((self.ensembles,)).float()
-        #w = torch.tensor([i/12 + 1 for i in range(self.ensembles)]).float()
-        w0 = torch.tensor([i/12 + 1 for i in range(self.ensembles)]).float()
+        w0 = torch.ones((self.ensembles,)).float()
 
         self.siren = SirenNet(
             ensembles = self.ensembles,
@@ -41,23 +38,7 @@ class NbModel(nn.Module):
             w0 = w
         )
 
-        #self.sirens = nn.ModuleList([
-            #SirenNet(
-                #dim_in=4, # x and y both are have 2d coords
-                #dim_hidden=dim_hidden,
-                #dim_out=1, num_layers=n_layers,
-                #w0_initial= i/12 + 1
-            #)
-            #for i in range(2*n_basis**2 - 1)
-        #])
-
-    # TODO: parallelize this! 
     def torus2basis(self, torus):
-        #out = []
-        #for i, siren in enumerate(self.sirens):
-            #out.append(siren(torus)[..., 0])
-        #return torch.stack(out, dim=0)
-
         return self.siren(torus)
 
     def forward(self, x, plot_path=None):
