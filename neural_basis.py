@@ -25,9 +25,8 @@ class NbModel(nn.Module):
         self.n_hidden = dim_hidden
         self.ensembles = 2*n_basis**2 - 1
 
-        #w0 = torch.tensor([i/2 + 1 for i in range(self.ensembles)]).float()
         w = torch.ones((self.ensembles,)).float()
-        w0 = torch.ones((self.ensembles,)).float()
+        w0 = torch.tensor([i/24 + 1 for i in range(self.ensembles)]).float()
 
         self.siren = SirenNet(
             ensembles = self.ensembles,
