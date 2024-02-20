@@ -1,7 +1,7 @@
 import os
 import torch
 
-from plot import plot_recon
+from plot import plot_recon, plot_coeff_hist
 from fourier_basis import fft_compression
 
 def train(nb_model, loader, optim, percept_loss, hps, freq=100):
@@ -9,6 +9,7 @@ def train(nb_model, loader, optim, percept_loss, hps, freq=100):
     nb_model.train()
 
     while True:
+        coeffs_t = None
         nb_nll_t, nb_lpips_t, fft_nll_t, fft_lpips_t, ortho_t = [], [], [], [], []
         print('new epoch')
         for i, (x, _) in enumerate(loader):
@@ -21,7 +22,7 @@ def train(nb_model, loader, optim, percept_loss, hps, freq=100):
             x -= mean
 
             # forward pass and optim
-            nb_y = nb_model(x.clone(), plot_path=plot_path)
+            nb_y, coeffs = nb_model(x.clone(), plot_path=plot_path)
             
             nb_nll = (x - nb_y).abs().mean() 
             nb_lpips = percept_loss(x, nb_y).mean()
@@ -47,6 +48,11 @@ def train(nb_model, loader, optim, percept_loss, hps, freq=100):
             fft_lpips_t.append(ft_lpips.item())
             ortho_t.append(ortho.item())
 
+            # coeff distribution
+            coeffs = coeffs.mean(dim=-1).detach()
+            if coeffs_t is None: coeffs_t = coeffs
+            else: coeffs_t = torch.cat([coeffs_t, coeffs], dim=0)
+
             if i % freq == 0:
                 m = lambda x: sum(x) / len(x)
                 print(f'nb_nll: {m(nb_nll_t):.6f}, nb_lpips: {m(nb_lpips_t):.6f}, ortho: {m(ortho_t):.6f}')
@@ -57,6 +63,7 @@ def train(nb_model, loader, optim, percept_loss, hps, freq=100):
                 x, nb_y, fft_y = fix(x), fix(nb_y), fix(fft_y) 
 
                 plot_recon(x, nb_y, fft_y, os.path.join(hps.exp_path, f'recon.png'))
+                plot_coeff_hist(coeffs_t, os.path.join(hps.exp_path, f'coeffs.png'))
 
         # save model and optimizer
         torch.save(nb_model.state_dict(), f'{hps.exp_path}/nb_model.pt')

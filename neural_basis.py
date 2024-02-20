@@ -59,14 +59,14 @@ class NbModel(nn.Module):
         stack_basis = self.torus2basis(ensemble_stack)
         basis = rearrange(stack_basis, '(c h w) k 1 -> k c h w', c=c, h=h, w=w)
 
-        if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
+        #if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
 
         # get coeffs
         coeffs = torch.einsum('k c h w, b c h w -> b k c', basis, x)
 
         # reconstruct image
         y = torch.einsum('b k c, k c h w -> b c h w', coeffs, basis)
-        return y
+        return y, coeffs
 
     # we want a complete biorthonormal basis: https://mathworld.wolfram.com/GeneralizedFourierSeries.html
     def orthon_sample(self, n_samples, device='cuda'):

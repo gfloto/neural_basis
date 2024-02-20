@@ -2,6 +2,27 @@ import os
 import torch
 import matplotlib.pyplot as plt
 
+def plot_coeff_hist(coeffs, path):
+    '''
+    coeffs is a tensor of [n, k]
+    this plots a bar chart of the mean of each coefficient
+    it also plots the std of each coefficient as error bars
+    '''
+
+    mean = coeffs.abs().mean(dim=0).cpu()
+    std = coeffs.abs().std(dim=0).cpu()
+
+    #mean, idx = mean.sort(descending=True)
+    #std = std[idx]
+
+    plt.plot(mean, '+')
+    plt.xlabel('basis function')
+    plt.ylabel('mean abs inner product')
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
+
 def make_gif(imgs, path):
     '''
     imgs is a tensor of [n, w, h]
