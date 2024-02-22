@@ -26,7 +26,7 @@ class NbModel(nn.Module):
         self.ensembles = 2*n_basis**2 - 1
 
         w = torch.ones((self.ensembles,)).float()
-        w0 = torch.tensor([i/24 + 1 for i in range(self.ensembles)]).float()
+        w0 = torch.tensor([i/64 + 1 for i in range(self.ensembles)]).float()
 
         self.siren = SirenNet(
             ensembles = self.ensembles,
@@ -44,8 +44,8 @@ class NbModel(nn.Module):
         b, c, h, w = x.shape
 
         # each image gets 2 groups of k**2 basis functions
-        line_x = torch.linspace(0, 1, 32).to(x.device)
-        line_y = torch.linspace(0, 1, 32).to(x.device)
+        line_x = torch.linspace(0, 1, h).to(x.device)
+        line_y = torch.linspace(0, 1, w).to(x.device)
         grid_x, grid_y = torch.meshgrid(line_x, line_y, indexing='ij')
         grid = torch.stack([grid_x, grid_y], dim=-1)
 
@@ -59,7 +59,7 @@ class NbModel(nn.Module):
         stack_basis = self.torus2basis(ensemble_stack)
         basis = rearrange(stack_basis, '(c h w) k 1 -> k c h w', c=c, h=h, w=w)
 
-        #if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
+        if plot_path is not None: plot_basis(basis.detach().cpu(), plot_path)
 
         # get coeffs
         coeffs = torch.einsum('k c h w, b c h w -> b k c', basis, x)

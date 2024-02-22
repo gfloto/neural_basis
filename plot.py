@@ -82,8 +82,10 @@ def pb(x, i, path):
 
 
 def plot_recon(x, y, z, path):
-    y = y.clamp(0, 1)
-    z = z.clamp(0, 1)
+    if x.shape[-1] != 1:
+        x /= x.max()
+        y /= y.max()
+        z /= z.max()
 
     fig = plt.figure(figsize=(9,3))
     ax1 = fig.add_subplot(131)
@@ -94,12 +96,12 @@ def plot_recon(x, y, z, path):
     y = (y + 1) / 2
     z = (z + 1) / 2
 
-    y = y.clamp(0, 1)
-    z = z.clamp(0, 1)
+    if x.shape[-1] == 1: cmap = 'inferno'
+    else: cmap = None
 
-    ax1.imshow(x)
-    ax2.imshow(y)
-    ax3.imshow(z)
+    ax1.imshow(x, cmap=cmap)
+    ax2.imshow(y, cmap=cmap)
+    ax3.imshow(z, cmap=cmap)
     
     ax1.axis('off')
     ax2.axis('off')
