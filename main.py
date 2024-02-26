@@ -14,7 +14,7 @@ from meta_neural import Swin, ImplicitSiren
 def get_hps():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--exp_path', type=str, default='dev-nav')
+    parser.add_argument('--exp_path', type=str, default='dev-nav-2')
     parser.add_argument('--test', type=bool, default=False)
     parser.add_argument('--dataset', type=str, default='navier')
     parser.add_argument('--task', type=str, default='implicit')
@@ -23,8 +23,8 @@ def get_hps():
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-5)
 
-    parser.add_argument('--n_layers', type=int, default=6)
-    parser.add_argument('--dim_hidden', type=int, default=256)
+    parser.add_argument('--n_layers', type=int, default=12)
+    parser.add_argument('--dim_hidden', type=int, default=512)
 
     # basis task params
     parser.add_argument('--n_ortho', type=int, default=int(1e4))
