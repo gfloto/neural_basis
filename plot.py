@@ -45,8 +45,32 @@ def make_gif(imgs, path):
     os.system(f'convert -delay 10 temp/*.png {path}')
     os.system('rm -r temp')
 
-    print('done')
-    quit()
+# just like make_gif, but 2 frames
+def video_compare(x, y, path):
+    '''
+    x, y are tensors of [n, w, h]
+    this function makes a gif with n frames
+    each frame is a side by side comparison of x and y
+    '''
+
+    # make directory
+    os.makedirs('temp', exist_ok=True)
+
+    # save each frame
+    for i in range(x.shape[0]):
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
+        axs[0].imshow(x[i], cmap='inferno')
+        axs[1].imshow(y[i], cmap='inferno')
+        axs[0].axis('off')
+        axs[1].axis('off')
+
+        num = str(i).zfill(3)
+        plt.savefig(f'temp/{num}.png')
+        plt.close()
+
+    # make gif
+    #os.system(f'convert -delay 10 temp/*.png {path}')
+    #os.system('rm -r temp')
     
 
 def plot_basis(x, path):

@@ -13,11 +13,13 @@ def fft_compression(x, n_basis):
 
     # perform 2d fft
     c = fft.fftn(x, dim=(-2, -1))
+    z = c[..., :n_basis, :n_basis]
+
     c[..., n_basis:, :] = 0
     c[..., :, n_basis:] = 0
     recon = fft.ifftn(c, dim=(-2, -1)).real
 
-    return recon
+    return z, recon
 
 if __name__ == '__main__':
     # get basis functions to plot

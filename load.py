@@ -1,8 +1,10 @@
 import h5py
 import torch
+import torch.fft as fft
 from torch.utils.data import Dataset, DataLoader
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
+from einops import rearrange
 
 from plot import make_gif
 
@@ -22,13 +24,13 @@ def cifar10_loader(batch_size, test, num_workers):
 
     return loader
 
-def navier_loader(path, mode, batch_size, num_workers, basis=False):
+def navier_loader(path, mode, batch_size, num_workers, basis=False, n_basis=None):
     '''
     basis is a flag for training basis functions
     in this case we sample across time and random seed
     '''
 
-    dataset = NavierDataset(path, mode, basis=basis)
+    dataset = NavierDataset(path, mode, basis=basis, n_basis=n_basis)
 
     loader = DataLoader(
         dataset, batch_size=batch_size,
@@ -38,21 +40,25 @@ def navier_loader(path, mode, batch_size, num_workers, basis=False):
     return loader
 
 class NavierDataset(Dataset):
-    def __init__(self, path, mode, basis=False):
+    def __init__(self, path, mode, basis=False, n_basis=None):
         if mode == 'train': self.len = 8000
         elif mode == 'test': self.len = 2000
         else: raise ValueError('mode must be "train" or "test"')
 
         self.mode = mode
         self.basis = basis
+        self.n_basis = n_basis
         self.f = h5py.File(path, 'r')
         self.idx_map = torch.randperm(self.len)
 
     def __len__(self):
-        return 50*self.len
+        if self.basis: return 50*self.len
+        else: return self.len
     
     def __getitem__(self, idx):
-        idx = torch.randint(0, self.len, (1,)).item()
+        if self.basis:
+            idx = torch.randint(0, self.len, (1,)).item()
+
         if self.mode == 'train':
             x = self.f['u'][..., self.idx_map[idx]]
         else:
@@ -62,8 +68,25 @@ class NavierDataset(Dataset):
         if self.basis:
             t = torch.randint(0, 50, (1,)).item()
             x = x[t][None, ...]
+
+        if self.n_basis is not None:
+            x = torch.tensor(x)
+            return self.fft(x)
         
-        return torch.tensor(x), torch.tensor(0)
+        else:
+            return torch.tensor(x), torch.tensor(0)
+    
+    def fft(self, x):
+        x = torch.nn.functional.sigmoid(x)
+        c = fft.fftn(x, dim=(-2, -1))
+        c /= c.shape[-1] * c.shape[-2]
+
+        z = c[..., :self.n_basis, :self.n_basis]
+        z_real = z.real; z_imag = z.imag
+        z = torch.stack([z_real, z_imag], dim=-1)
+        z = rearrange(z, 't h w c -> t (c h w)')
+
+        return z, x
 
 if __name__ == '__main__':
     batch_size = 5
