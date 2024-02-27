@@ -8,6 +8,9 @@ from einops import rearrange
 
 from plot import make_gif
 
+def exists(x):
+    return x is not None
+
 def cifar10_loader(batch_size, test, num_workers):
     train = not test
     dataset = datasets.CIFAR10(
@@ -24,13 +27,13 @@ def cifar10_loader(batch_size, test, num_workers):
 
     return loader
 
-def navier_loader(path, mode, batch_size, num_workers, basis=False, n_basis=None):
+def navier_loader(path, mode, batch_size, num_workers, n_basis, nav_type=None):
     '''
     basis is a flag for training basis functions
     in this case we sample across time and random seed
     '''
 
-    dataset = NavierDataset(path, mode, basis=basis, n_basis=n_basis)
+    dataset = NavierDataset(path, mode, n_basis, nav_type=nav_type)
 
     loader = DataLoader(
         dataset, batch_size=batch_size,
@@ -40,23 +43,23 @@ def navier_loader(path, mode, batch_size, num_workers, basis=False, n_basis=None
     return loader
 
 class NavierDataset(Dataset):
-    def __init__(self, path, mode, basis=False, n_basis=None):
+    def __init__(self, path, mode, n_basis, nav_type=None):
         if mode == 'train': self.len = 8000
         elif mode == 'test': self.len = 2000
         else: raise ValueError('mode must be "train" or "test"')
 
         self.mode = mode
-        self.basis = basis
         self.n_basis = n_basis
+        self.nav_type = nav_type
         self.f = h5py.File(path, 'r')
         self.idx_map = torch.randperm(self.len)
 
     def __len__(self):
-        if self.basis: return 50*self.len
+        if not exists(self.nav_type): return 50*self.len
         else: return self.len
     
     def __getitem__(self, idx):
-        if self.basis:
+        if not exists(self.nav_type):
             idx = torch.randint(0, self.len, (1,)).item()
 
         if self.mode == 'train':
@@ -65,16 +68,17 @@ class NavierDataset(Dataset):
             idx = idx + 8000
             x = self.f['u'][..., self.idx_map[idx]]
 
-        if self.basis:
+        if self.nav_type == 'fft':
+            x = torch.tensor(x)
+            x, y = self.fft(x)
+        elif self.nav_type == 'implicit':
+            x = torch.tensor(x); y= torch.tensor(0)
+        else:
             t = torch.randint(0, 50, (1,)).item()
             x = x[t][None, ...]
+            x = torch.tensor(x); y = torch.tensor(0)
 
-        if self.n_basis is not None:
-            x = torch.tensor(x)
-            return self.fft(x)
-        
-        else:
-            return torch.tensor(x), torch.tensor(0)
+        return x, y 
     
     def fft(self, x):
         x = torch.nn.functional.sigmoid(x)

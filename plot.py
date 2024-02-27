@@ -69,8 +69,8 @@ def video_compare(x, y, path):
         plt.close()
 
     # make gif
-    #os.system(f'convert -delay 10 temp/*.png {path}')
-    #os.system('rm -r temp')
+    os.system(f'convert -delay 10 temp/*.png {path}')
+    os.system('rm -r temp')
     
 
 def plot_basis(x, path):
