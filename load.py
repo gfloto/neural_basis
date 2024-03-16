@@ -71,12 +71,14 @@ class NavierDataset(Dataset):
         if self.nav_type == 'fft':
             x = torch.tensor(x)
             x, y = self.fft(x)
-        elif self.nav_type == 'implicit':
-            x = torch.tensor(x); y= torch.tensor(0)
+        elif self.nav_type == 'series':
+            x = torch.tensor(x); y = torch.tensor(0)
         else:
             t = torch.randint(0, 50, (1,)).item()
-            x = x[t][None, ...]
-            x = torch.tensor(x); y = torch.tensor(0)
+            x = x[t]
+
+            x = torch.tensor(x)
+            y = torch.tensor(t)
 
         return x, y 
     

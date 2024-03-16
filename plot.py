@@ -1,27 +1,48 @@
 import os
+import math
 import torch
+import numpy as np
+from einops import rearrange
 import matplotlib.pyplot as plt
 
-def plot_coeff_hist(coeffs, path):
-    '''
-    coeffs is a tensor of [n, k]
-    this plots a bar chart of the mean of each coefficient
-    it also plots the std of each coefficient as error bars
-    '''
+plt.style.use('dark_background')
 
-    mean = coeffs.abs().mean(dim=0).cpu()
-    std = coeffs.abs().std(dim=0).cpu()
+def basis_video(x, path):
+    t, nb, h, w = x.shape
 
-    #mean, idx = mean.sort(descending=True)
-    #std = std[idx]
+    # map to [0, 1]
+    x = (x - x.min()) / (x.max() - x.min())
 
-    plt.plot(mean, '+')
-    plt.xlabel('basis function')
-    plt.ylabel('mean abs inner product')
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
+    # pad images with zeros
+    p = 1
+    zeros = torch.zeros(t, nb, h+2*p, w+2*p).cuda()
+    zeros[..., p:-p, p:-p] = x
+    x = zeros
 
+    # reshape to square with tiles
+    # first add empty tiles
+    k = math.ceil(nb ** 0.5)
+    add_tiles = torch.zeros(t, k**2 - nb, h+2*p, w+2*p).cuda()
+    x = torch.cat([x, add_tiles], dim=1)
+
+    x = rearrange(x, 't (k1 k2) h w -> t (k1 h) (k2 w)', k1=k, k2=k).cpu()
+
+    # make directory
+    os.makedirs('temp', exist_ok=True)
+
+    # save each frame
+    for i in range(x.shape[0]):
+        fig = plt.figure(figsize=(10, 10))
+        plt.imshow(x[i], cmap='inferno')
+        plt.axis('off')
+
+        num = str(i).zfill(3)
+        plt.savefig(f'temp/{num}.png')
+        plt.close()
+
+    # make gif
+    os.system(f'convert -delay 10 temp/*.png {path}')
+    os.system('rm -r temp')
 
 def make_gif(imgs, path):
     '''
@@ -46,23 +67,39 @@ def make_gif(imgs, path):
     os.system('rm -r temp')
 
 # just like make_gif, but 2 frames
-def video_compare(x, y, path):
+def video_compare(coeff, x, y, path):
     '''
     x, y are tensors of [n, w, h]
     this function makes a gif with n frames
     each frame is a side by side comparison of x and y
     '''
 
+    x = x.cpu(); y = y.cpu(); coeff = coeff.cpu()
+
     # make directory
     os.makedirs('temp', exist_ok=True)
+    
+    # get n uniform samples from 
+    colors = plt.cm.inferno(np.linspace(0.2, 1, coeff.shape[1]))
 
     # save each frame
     for i in range(x.shape[0]):
-        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
-        axs[0].imshow(x[i], cmap='inferno')
-        axs[1].imshow(y[i], cmap='inferno')
-        axs[0].axis('off')
-        axs[1].axis('off')
+        fig = plt.figure(figsize=(10, 10)) 
+
+        # coeff line plot
+        ax = fig.add_subplot(2, 1, 1)
+        ax1 = fig.add_subplot(2, 2, 3)
+        ax2 = fig.add_subplot(2, 2, 4)
+
+        for j in range(coeff.shape[1]):
+            color = colors[j]
+            ax.plot(coeff[:i, j], color=color)
+
+        ax1.imshow(x[i], cmap='inferno')
+        ax2.imshow(y[i], cmap='inferno')
+
+        ax1.axis('off')
+        ax2.axis('off')
 
         num = str(i).zfill(3)
         plt.savefig(f'temp/{num}.png')
@@ -71,6 +108,26 @@ def video_compare(x, y, path):
     # make gif
     os.system(f'convert -delay 10 temp/*.png {path}')
     os.system('rm -r temp')
+
+def plot_coeff_hist(coeffs, path):
+    '''
+    coeffs is a tensor of [n, k]
+    this plots a bar chart of the mean of each coefficient
+    it also plots the std of each coefficient as error bars
+    '''
+
+    mean = coeffs.abs().mean(dim=0).cpu()
+    std = coeffs.abs().std(dim=0).cpu()
+
+    #mean, idx = mean.sort(descending=True)
+    #std = std[idx]
+
+    plt.plot(mean, '+')
+    plt.xlabel('basis function')
+    plt.ylabel('mean abs inner product')
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
     
 
 def plot_basis(x, path):
@@ -133,3 +190,13 @@ def plot_recon(x, y, z, path):
 
     plt.savefig(path)
     plt.close()
+
+
+if __name__ == '__main__':
+    basis_path = 'results/dev/basis.pt'
+    basis = torch.load(basis_path, map_location='cpu')
+
+    basis = basis[:, 1]
+
+    basis = basis.detach()
+    make_gif(basis, 'basis.gif')

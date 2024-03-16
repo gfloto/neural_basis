@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torchvision.models import swin_v2_s
 
-from models.orig_siren import SirenNet
+from models.siren import SirenNet
 
 class Swin(nn.Module):
     def __init__(self, dim):
