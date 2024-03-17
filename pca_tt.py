@@ -75,8 +75,8 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
             eigen_f = siren_model(dom)
 
             # ensure that eigen-function is normalized and orthogonal to basis
-            eigen_f = eigen_f / func_norm(eigen_f)[..., None, None]
             eigen_f = orthogonalize(eigen_f, basis)
+            eigen_f = eigen_f / func_norm(eigen_f)[..., None, None]
             eigen_f = repeat(eigen_f, 't h w -> b t h w', b=bs)
 
             # train on the residual
@@ -101,12 +101,6 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
     basis = save_basis(eigen_f[0], basis, hps.exp_path)
 
     print('making video')
-
-    basis_video(
-        basis,
-        os.path.join(hps.exp_path, f'basis.gif')
-    )
-
     res, coeff = basis_residual(x, basis, return_coeffs=True)
 
     video_compare(
@@ -114,6 +108,11 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
         x[0] - res[0],
         x[0],
         os.path.join(hps.exp_path, f'compare.gif')
+    )
+
+    basis_video(
+        basis,
+        os.path.join(hps.exp_path, f'basis.gif')
     )
 
     return basis

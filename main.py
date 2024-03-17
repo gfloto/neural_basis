@@ -9,6 +9,7 @@ from implicit_tt import implicit_train, implicit_test
 from ode_fft_tt import ode_fft_train, ode_fft_test
 from ode_implicit_tt import ode_imp_train, ode_imp_test
 from pca_tt import pca_train, pca_test
+from basis_2_tt import basis_2_train, basis_2_test
 
 from neural_basis import NbModel
 from meta_neural import Swin, ImplicitSiren
@@ -22,7 +23,7 @@ def get_hps():
     parser.add_argument('--exp_path', type=str, default='dev')
     parser.add_argument('--test', type=bool, default=False)
     parser.add_argument('--dataset', type=str, default='navier')
-    parser.add_argument('--task', type=str, default='pca')
+    parser.add_argument('--task', type=str, default='basis_2')
     parser.add_argument('--implicit_path', type=str, default='results/dev-nav-2')
 
     parser.add_argument('--batch_size', type=int, default=32)
@@ -46,7 +47,7 @@ def get_hps():
     
     assert hps.device in ['cuda', 'cpu']
     assert hps.dataset in ['cifar10', 'navier', 'navier-fft', 'navier-ode']
-    assert hps.task in ['pca', 'implicit', 'basis', 'fft-ode', 'implicit-ode']
+    assert hps.task in ['basis_2', 'pca', 'implicit', 'basis', 'fft-ode', 'implicit-ode']
 
     # set number of channels based of dataset
     if hps.dataset == 'cifar10': hps.channels = 3
@@ -57,6 +58,7 @@ def get_hps():
 def fetch_tt(task):
     if task == 'pca': return pca_train, pca_test
     elif task == 'basis': return basis_train, basis_test
+    elif task == 'basis_2': return basis_2_train, basis_2_test
     elif task == 'implicit': return implicit_train, implicit_test
     elif task == 'fft-ode': return ode_fft_train, ode_fft_test
     elif task == 'implicit-ode': return ode_imp_train, ode_imp_test
@@ -90,6 +92,9 @@ if __name__ == '__main__':
 
     elif hps.task == 'pca':
         train(loader, hps)
+
+    elif hps.task == 'basis_2':
+        basis_2_train(loader, hps)
 
     elif hps.task == 'implicit':
         swin_model = Swin(hps.imp_dim).to(hps.device) 
