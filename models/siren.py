@@ -61,6 +61,7 @@ class Siren(nn.Module):
         out =  F.linear(x, self.weight, self.bias)
         out = self.activation(out)
         out = self.dropout(out)
+
         return out
 
 # siren network

@@ -5,7 +5,7 @@ from tqdm import tqdm
 from einops import rearrange, repeat
 
 from plot import basis_video, video_compare 
-from models.siren import EigenFunction
+from models.parallel_siren import EigenFunction
 
 def func_inner(x, y):
     assert x.shape == y.shape
@@ -56,7 +56,7 @@ def save_basis(eigen_f, basis, path):
 
     return new_basis
 
-def train(siren_model, loader, optim, basis, basis_num, hps): 
+def train(siren_model, loader, optim, hps): 
     siren_model.train()
     siren_model = siren_model.cuda()
 
@@ -66,8 +66,8 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
     # domain of eigen-function
     dom = make_domain(h, w).cuda()
 
-    for _ in range(3):
-        loss_t = []; recon_t = []
+    while True:
+        loss_t = []
         for i, (x, _) in enumerate(tqdm(loader)):
             x = x.cuda()
 
@@ -75,15 +75,14 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
             eigen_f = siren_model(dom)
 
             # ensure that eigen-function is normalized and orthogonal to basis
-            eigen_f = orthogonalize(eigen_f, basis)
             eigen_f = eigen_f / func_norm(eigen_f)[..., None, None]
-            eigen_f = repeat(eigen_f, 't h w -> b t h w', b=bs)
 
-            # train on the residual
-            x_res = basis_residual(x, basis)
+            # recon x using basis
+            coeffs = torch.einsum('b t h w, t e h w -> b t e', x, eigen_f)
+            recon = torch.einsum('b t e, t e h w -> b t h w', coeffs, eigen_f)
 
             # different losses
-            loss = -func_inner(eigen_f, x_res).abs().mean()
+            loss = (x - recon).abs().mean() 
 
             # backward
             optim.zero_grad()
@@ -92,35 +91,29 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
 
             loss_t.append(loss.item())
 
-            # recon
-            recon = x - x_res.detach()
-            recon_loss = (recon - x).abs().mean()
-            recon_t.append(recon_loss.item())
-
             # print
-            if i % 50 == 0:
+            if i % 25 == 0:
                 print(f'avg loss: {np.mean(loss_t[-100:])}')
-                print(f'avg recon: {np.mean(recon_t[-100:])}')
-
-    print('saving model')
-    torch.save(siren_model.state_dict(), f'{hps.exp_path}/siren_model_{basis_num}.pt')
-    basis = save_basis(eigen_f[0], basis, hps.exp_path)
-
-    if basis_num % 5 == 0:
-        print('making video')
-        res, coeff = basis_residual(x, basis, return_coeffs=True)
 
         video_compare(
-            coeff[0],
-            x[0] - res[0],
+            coeffs[0].detach(),
+            recon[0].detach(),
             x[0],
             os.path.join(hps.exp_path, f'compare.gif')
         )
 
-        basis_video(
-            basis,
-            os.path.join(hps.exp_path, f'basis.gif')
-        )
+        print('saving model')
+        torch.save(siren_model.state_dict(), f'{hps.exp_path}/siren_model.pt')
+
+    basis = save_basis(eigen_f[0], basis, hps.exp_path)
+
+    print('making video')
+    res, coeff = basis_residual(x, basis, return_coeffs=True)
+
+    basis_video(
+        basis,
+        os.path.join(hps.exp_path, f'basis.gif')
+    )
 
     return basis
 
@@ -131,39 +124,29 @@ for a R^{\times d} domain
 entry point
 '''
 
-def pca_train(loader, hps):
+def basis_2_train(loader, hps):
     h, w = 64, 64
 
-    # load basis if exists
-    if os.path.exists(f'{hps.exp_path}/basis.pt'):
-        print('loading basis')
-        basis = torch.load(f'{hps.exp_path}/basis.pt').cuda()
-    else:
-        # set first basis function to be constant
-        constant = torch.ones((50, 1, h, w)).cuda()
+    w0 = torch.ones(hps.n_basis).cuda()
+    w0_initial = 30. * torch.ones(hps.n_basis).cuda()
 
-        # require that norm of basis function is 1
-        norm = func_norm(constant)
-        basis = constant / norm[..., None, None]
+    siren_model = EigenFunction(
+        ensembles=hps.n_basis,
+        dim_in = 3, # 2 spatial dims with 1 time
+        dim_out = 1, # number of channels
+        dim_hidden = hps.dim_hidden,
+        num_layers = hps.n_layers,
+        w0 = w0,
+        w0_initial = w0_initial,
+    )
 
-    for nb in range(basis.shape[1], hps.n_basis):
-        print(f'optimizing basis {nb}')
+    # load if exists
+    if os.path.exists(f'{hps.exp_path}/siren_model.pt'):
+        print('loading siren_model')
+        siren_model.load_state_dict(torch.load(f'{hps.exp_path}/siren_model.pt'))
 
-        siren_model = EigenFunction(
-            dim_in = 3, # 2 spatial dims with 1 time
-            dim_out = hps.channels, # number of channels
-            dim_hidden = hps.dim_hidden,
-            num_layers = hps.n_layers,
-        )
+    optim = torch.optim.Adam(siren_model.parameters(), lr=hps.lr)
+    basis = train(siren_model, loader, optim, hps)
 
-        # load previous model if exists
-        n_model = basis.shape[1] 
-        if os.path.exists(f'{hps.exp_path}/siren_model_{n_model}.pt'):
-            print(f'loading model: {n_model}')
-            siren_model.load_state_dict(torch.load(f'{hps.exp_path}/siren_model_{n_model}.pt'))
-
-        optim = torch.optim.Adam(siren_model.parameters(), lr=hps.lr)
-        basis = train(siren_model, loader, optim, basis, nb, hps)
-
-def pca_test():
+def basis_2_test():
     pass

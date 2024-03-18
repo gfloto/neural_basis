@@ -23,22 +23,22 @@ def get_hps():
     parser.add_argument('--exp_path', type=str, default='dev')
     parser.add_argument('--test', type=bool, default=False)
     parser.add_argument('--dataset', type=str, default='navier')
-    parser.add_argument('--task', type=str, default='basis_2')
+    parser.add_argument('--task', type=str, default='pca')
     parser.add_argument('--implicit_path', type=str, default='results/dev-nav-2')
 
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--lr', type=float, default=1e-4)
 
-    parser.add_argument('--n_layers', type=int, default=12)
-    parser.add_argument('--dim_hidden', type=int, default=512)
+    parser.add_argument('--n_layers', type=int, default=6)
+    parser.add_argument('--dim_hidden', type=int, default=128)
 
     # basis task params
     parser.add_argument('--n_ortho', type=int, default=int(1e4))
-    parser.add_argument('--n_basis', type=int, default=128)
+    parser.add_argument('--n_basis', type=int, default=512)
 
     # implicit task params
-    parser.add_argument('--imp_dim', type=int, default=256)
+    parser.add_argument('--imp_dim', type=int, default=None)
 
     parser.add_argument('--num_workers', type=int, default=4)
     parser.add_argument('--device', type=str, default='cuda')
@@ -73,7 +73,7 @@ if __name__ == '__main__':
     elif hps.dataset == 'navier':
         tt = 'test' if hps.test else 'train'
         if hps.task == 'fft-ode': nav_type = 'fft'
-        elif hps.task in ['implicit-ode', 'pca']: nav_type = 'series'
+        elif hps.task in ['implicit-ode', 'pca', 'basis_2']: nav_type = 'series'
         else: nav_type = None
 
         loader = navier_loader(

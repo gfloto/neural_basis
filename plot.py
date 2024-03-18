@@ -76,19 +76,6 @@ def video_compare(coeff, x, y, path):
 
     x = x.cpu(); y = y.cpu(); coeff = coeff.cpu()
 
-    # get fft of y
-    z = torch.fft.fft2(y)
-    k = math.ceil( math.pow(y.shape[1] / 2, 0.5) )
-    
-    # zero out high frequency coefficients
-    z[:, k:, :] = 0
-    z[:, :, k:] = 0
-
-    # get inverse fft
-    z = torch.fft.ifft2(z).abs()
-    print('fft error:', (z - y).abs().mean())
-    print('pca error:', (x - y).abs().mean())
-
     # make directory
     os.makedirs('temp', exist_ok=True)
     

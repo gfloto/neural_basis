@@ -64,22 +64,16 @@ class Siren(nn.Module):
             self.bias = None
 
     def forward(self, x):
-        y = torch.einsum('e o i, b e i -> b e o', self.weight, x)
+        if self.is_first:
+            y = torch.einsum('e o i, b i -> b e o', self.weight, x)
+        else:
+            y = torch.einsum('e o i, b e i -> b e o', self.weight, x)
+
         if exists(self.bias):
             y += self.bias
         return self.activation(y)
-        
-
-        #out = []
-        #for i in range(self.weight.shape[0]):
-            #y = F.linear(x[:,i], self.weight[i], self.bias[i])
-            #y = self.activation(y, i)
-            #out.append(y)
-        
-        #return torch.stack(out, dim=1)
 
 # siren network
-
 class SirenNet(nn.Module):
     def __init__(
         self,
@@ -131,4 +125,41 @@ class SirenNet(nn.Module):
             x = layer(x)
 
         return self.last_layer(x)
+
+class EigenFunction(nn.Module):
+    def __init__(
+            self,
+            ensembles,
+            dim_in,
+            dim_hidden,
+            dim_out,
+            num_layers,
+            w0 = 1.,
+            w0_initial = 30.,
+            use_bias = True,
+            final_activation = None,
+            dropout = 0.
+        ):
+        super().__init__()
+        self.net = SirenNet(
+            ensembles = ensembles,
+            dim_in = dim_in,
+            dim_hidden = dim_hidden,
+            dim_out = dim_out,
+            num_layers = num_layers,
+            w0 = w0,
+            w0_initial = w0_initial,
+            use_bias = use_bias,
+            final_activation = final_activation,
+            dropout = dropout
+        )
+
+    def forward(self, x):
+        t, h, w, c = x.shape
+        x = rearrange(x, 't h w c -> (t h w) c')
+
+        eigen_f = self.net(x)
+
+        eigen_f = rearrange(eigen_f, '(t h w) e 1 -> t e h w', t=t, h=h, w=w)
+        return eigen_f
         
