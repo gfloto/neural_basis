@@ -1,4 +1,5 @@
 import os
+import math
 import torch
 import numpy as np
 from tqdm import tqdm
@@ -56,6 +57,16 @@ def save_basis(eigen_f, basis, path):
 
     return new_basis
 
+def fourier(x, n_basis):
+    k = math.ceil( (n_basis/2) ** 0.5)
+
+    coeffs = torch.fft.fft2(x)
+    coeffs[..., k:, :] = 0
+    coeffs[..., :, k:] = 0
+
+    recon = torch.fft.ifft2(coeffs).real
+    return recon
+
 def train(siren_model, loader, optim, basis, basis_num, hps): 
     siren_model.train()
     siren_model = siren_model.cuda()
@@ -67,7 +78,7 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
     dom = make_domain(h, w).cuda()
 
     for _ in range(3):
-        loss_t = []; recon_t = []
+        loss_t, recon_t, fourier_t = [], [], []
         for i, (x, _) in enumerate(tqdm(loader)):
             x = x.cuda()
 
@@ -97,10 +108,17 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
             recon_loss = (recon - x).abs().mean()
             recon_t.append(recon_loss.item())
 
+            # get fourier recon
+            recon_fourier = fourier(x, hps.n_basis)
+            fourier_loss = (recon_fourier - x).abs().mean()
+            fourier_t.append(fourier_loss.item())
+
             # print
             if i % 50 == 0:
                 print(f'avg loss: {np.mean(loss_t[-100:])}')
                 print(f'avg recon: {np.mean(recon_t[-100:])}')
+                print(f'avg fourier: {np.mean(fourier_t[-100:])}')
+                break
 
     print('saving model')
     torch.save(siren_model.state_dict(), f'{hps.exp_path}/siren_model_{basis_num}.pt')
@@ -112,7 +130,8 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
 
         video_compare(
             coeff[0],
-            x[0] - res[0],
+            recon[0],
+            recon_fourier[0],
             x[0],
             os.path.join(hps.exp_path, f'compare.gif')
         )
@@ -123,6 +142,29 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
         )
 
     return basis
+
+def test(loader, basis, hps):
+
+    recon_t, fourier_t = [], []
+    for i, (x, _) in enumerate(tqdm(loader)):
+        x = x.cuda()
+
+        # train on the residual
+        x_res = basis_residual(x, basis)
+
+        # recon
+        recon = x - x_res.detach()
+        recon_loss = (recon - x).abs().mean()
+        recon_t.append(recon_loss.item())
+
+        # get fourier recon
+        recon_fourier = fourier(x, hps.n_basis)
+        fourier_loss = (recon_fourier - x).abs().mean()
+        fourier_t.append(fourier_loss.item())
+
+    print('final results')
+    print(f'avg recon: {np.mean(recon_t):.5f}')
+    print(f'avg fourier: {np.mean(fourier_t):.5f}')
 
 '''
 get optimal functional pca basis
@@ -165,5 +207,37 @@ def pca_train(loader, hps):
         optim = torch.optim.Adam(siren_model.parameters(), lr=hps.lr)
         basis = train(siren_model, loader, optim, basis, nb, hps)
 
-def pca_test():
-    pass
+def pca_test(loader, hps):
+    # load basis
+    basis = torch.load(f'{hps.exp_path}/basis.pt').cuda()
+
+    test(loader, basis, hps)
+
+
+from load import navier_loader
+if __name__ == '__main__':
+    exp_path = 'results/dev'
+    mode = 'test'
+    batch_size = 32
+    num_workers = 4
+    nav_type = 'series'
+
+    basis = torch.load(f'{exp_path}/basis.pt').cuda()
+
+    loader = navier_loader(
+        'data/navier.mat', mode, batch_size,
+        num_workers, None, nav_type=nav_type 
+    )
+
+    coeff_stack = None
+    for i, (x, _) in enumerate(tqdm(loader)):
+        x = x.cuda()
+
+        # train on the residual
+        x_res, coeffs = basis_residual(x, basis, return_coeffs=True)
+
+        # stack coeffs
+        if coeff_stack is None: coeff_stack = coeffs
+        else: coeff_stack = torch.cat([coeff_stack, coeffs], dim=0)
+
+    torch.save(coeff_stack, f'{exp_path}/coeffs-{mode}.pt')

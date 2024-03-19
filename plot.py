@@ -67,14 +67,14 @@ def make_gif(imgs, path):
     os.system('rm -r temp')
 
 # just like make_gif, but 2 frames
-def video_compare(coeff, x, y, path):
+def video_compare(coeff, x, z, y, path):
     '''
     x, y are tensors of [n, w, h]
     this function makes a gif with n frames
     each frame is a side by side comparison of x and y
     '''
 
-    x = x.cpu(); y = y.cpu(); coeff = coeff.cpu()
+    x = x.cpu(); y = y.cpu(); z = z.cpu(); coeff = coeff.cpu()
 
     # make directory
     os.makedirs('temp', exist_ok=True)
@@ -87,19 +87,38 @@ def video_compare(coeff, x, y, path):
         fig = plt.figure(figsize=(10, 10)) 
 
         # coeff line plot
-        ax = fig.add_subplot(2, 1, 1)
-        ax1 = fig.add_subplot(2, 2, 3)
-        ax2 = fig.add_subplot(2, 2, 4)
+        ax1 = fig.add_subplot(3, 1, 1)
+        ax2 = fig.add_subplot(3, 1, 2)
+        ax3 = fig.add_subplot(3, 3, 7)
+        ax4 = fig.add_subplot(3, 3, 8)
+        ax5 = fig.add_subplot(3, 3, 9)
 
+        # plot loss for fourier and neural basis
+        neural_loss = (x - y).abs().mean(dim=(1, 2))
+        fourier_loss = (x - z).abs().mean(dim=(1, 2))
+        ax1.plot(neural_loss[:i], label='neural')
+        ax1.plot(fourier_loss[:i], label='fourier')
+        ax1.set_title('reconstruction loss')
+        ax1.legend()
+
+        # plot neural eigenvalues
         for j in range(coeff.shape[1]):
             color = colors[j]
-            ax.plot(coeff[:i, j], color=color)
+            ax2.plot(coeff[:i, j], color=color)
+        ax2.set_title('neural eigenvalues')
 
-        ax1.imshow(x[i], cmap='inferno')
-        ax2.imshow(y[i], cmap='inferno')
+        ax3.imshow(x[i], cmap='inferno')
+        ax4.imshow(y[i], cmap='inferno')
+        ax5.imshow(z[i], cmap='inferno')
 
-        ax1.axis('off')
-        ax2.axis('off')
+        # titles
+        ax3.set_title('neural')
+        ax4.set_title('original')
+        ax5.set_title('fourier')
+
+        ax3.axis('off')
+        ax4.axis('off')
+        ax5.axis('off')
 
         num = str(i).zfill(3)
         plt.savefig(f'temp/{num}.png')

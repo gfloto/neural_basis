@@ -54,6 +54,9 @@ class NavierDataset(Dataset):
         self.f = h5py.File(path, 'r')
         self.idx_map = torch.randperm(self.len)
 
+        if self.mode == 'test':
+            self.idx_map += 8000
+
     def __len__(self):
         if not exists(self.nav_type): return 50*self.len
         else: return self.len
@@ -65,7 +68,6 @@ class NavierDataset(Dataset):
         if self.mode == 'train':
             x = self.f['u'][..., self.idx_map[idx]]
         else:
-            idx = idx + 8000
             x = self.f['u'][..., self.idx_map[idx]]
 
         if self.nav_type == 'fft':

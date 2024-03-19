@@ -21,7 +21,7 @@ def get_hps():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--exp_path', type=str, default='dev')
-    parser.add_argument('--test', type=bool, default=False)
+    parser.add_argument('--test', action='store_true')
     parser.add_argument('--dataset', type=str, default='navier')
     parser.add_argument('--task', type=str, default='pca')
     parser.add_argument('--implicit_path', type=str, default='results/dev-nav-2')
@@ -91,7 +91,8 @@ if __name__ == '__main__':
         print(f'neural basis params: {sum(p.numel() for p in siren_model.parameters())}')
 
     elif hps.task == 'pca':
-        train(loader, hps)
+        if not hps.test: train(loader, hps)
+        else: test(loader, hps)
 
     elif hps.task == 'basis_2':
         basis_2_train(loader, hps)
