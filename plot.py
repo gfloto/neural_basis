@@ -67,7 +67,7 @@ def make_gif(imgs, path):
     os.system('rm -r temp')
 
 # just like make_gif, but 2 frames
-def video_compare(coeff, x, z, y, path):
+def video_compare(coeff, x, z, y, labels, path):
     '''
     x, y are tensors of [n, w, h]
     this function makes a gif with n frames
@@ -94,10 +94,10 @@ def video_compare(coeff, x, z, y, path):
         ax5 = fig.add_subplot(3, 3, 9)
 
         # plot loss for fourier and neural basis
-        neural_loss = (x - y).abs().mean(dim=(1, 2))
-        fourier_loss = (x - z).abs().mean(dim=(1, 2))
-        ax1.plot(neural_loss[:i], label='neural')
-        ax1.plot(fourier_loss[:i], label='fourier')
+        loss_1 = (z - x).abs().mean(dim=(1, 2))
+        loss_2 = (z - y).abs().mean(dim=(1, 2))
+        ax1.plot(loss_1[:i], label=labels[0])
+        ax1.plot(loss_2[:i], label=labels[1])
         ax1.set_title('reconstruction loss')
         ax1.legend()
 
@@ -112,9 +112,9 @@ def video_compare(coeff, x, z, y, path):
         ax5.imshow(z[i], cmap='inferno')
 
         # titles
-        ax3.set_title('neural')
+        ax3.set_title(labels[0])
         ax4.set_title('original')
-        ax5.set_title('fourier')
+        ax5.set_title(labels[1])
 
         ax3.axis('off')
         ax4.axis('off')

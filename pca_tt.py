@@ -229,15 +229,16 @@ if __name__ == '__main__':
         num_workers, None, nav_type=nav_type 
     )
 
-    coeff_stack = None
+    recon_stack = None
     for i, (x, _) in enumerate(tqdm(loader)):
         x = x.cuda()
 
         # train on the residual
-        x_res, coeffs = basis_residual(x, basis, return_coeffs=True)
+        x_res = basis_residual(x, basis)
+        recon = x - x_res
 
-        # stack coeffs
-        if coeff_stack is None: coeff_stack = coeffs
-        else: coeff_stack = torch.cat([coeff_stack, coeffs], dim=0)
+        # stack recon
+        if recon_stack is None: recon_stack = recon
+        else: recon_stack = torch.cat([recon_stack, recon], dim=0)
 
-    torch.save(coeff_stack, f'{exp_path}/coeffs-{mode}.pt')
+    torch.save(recon_stack, f'{exp_path}/recon-{mode}.pt')
