@@ -37,7 +37,7 @@ def coeff_recon_seed(coeffs, basis):
     return torch.einsum('b t e, t e h w -> b t h w', coeffs, basis)
 
 def train(model, basis_func, coeff_func, loader, opt, exp_path):
-    for _ in range(10):
+    for _ in range(5):
         loss_t, basis_t, mamba_t = [], [], []
         for i, (x, _) in enumerate(tqdm(loader)):
             x = x.cuda()
@@ -45,41 +45,56 @@ def train(model, basis_func, coeff_func, loader, opt, exp_path):
             # train on the residual
             basis_recon, coeffs = basis_func(x)
 
-            z = model(coeffs)
+            # learn delta coeffs
+            coeffs_delta = coeffs[:, 1:] - coeffs[:, :-1]
+            io = torch.cat((coeffs[:, 0][:, None], coeffs_delta[:, :-1]), dim=1)
 
-            loss = (z[:, :-1] - coeffs[:, 1:]).abs().mean()
+            # forward pass
+            pred_delta = model(io)
+            coeff_loss = (pred_delta - coeffs_delta).abs().mean()
+
+            # recon coeff given delta
+            coeff_pred = coeffs[:, 0][:, None]
+            for t in range(pred_delta.shape[1]):
+                coeff_new = coeff_pred[:, -1] + pred_delta[:, t]
+                coeff_pred = torch.cat((coeff_pred, coeff_new[:, None]), dim=1)
+
+            mamba_recon = coeff_func(coeff_pred)
+            mamba_loss = (x - mamba_recon).abs().mean()
+
+            loss = coeff_loss + mamba_loss
 
             opt.zero_grad()
             loss.backward()
             opt.step()
 
             # record perf
-            loss_t.append(loss.item())
+            loss_t.append(coeff_loss.item())
 
             basis_loss = (x - basis_recon).abs().mean()
             basis_t.append(basis_loss.item())
 
-            mamba_recon = coeff_func(z)
-            mamba_loss = (x - mamba_recon).abs().mean()
             mamba_t.append(mamba_loss.item())
 
-        print(f'train loss: {np.mean(loss_t) :.7f}')
+        print(f'coeff: {np.mean(loss_t) :.7f}')
         print(f'mamba: {np.mean(mamba_t) :.5f}')
         print(f'basis: {np.mean(basis_t) :.5f}')
 
-    path = os.path.join(exp_path, 'mamba-train.gif')
+        path = os.path.join(exp_path, 'mamba-train.gif')
 
-    video_compare(
-        z[0, 1:].detach().cpu(),
-        mamba_recon[0, 1:].detach().cpu(),
-        x[0, 1:].detach().cpu(),
-        basis_recon[0, 1:].detach().cpu(),
-        ['mamba', 'neural basis'],
-        path,
-    )
+        video_compare(
+            pred_delta[0].detach().cpu(),
+            mamba_recon[0].detach().cpu(),
+            x[0].detach().cpu(),
+            basis_recon[0].detach().cpu(),
+            ['mamba', 'neural basis'],
+            path,
+        )
 
     # save model
+    print('saving model')
     torch.save(model.state_dict(), f'{exp_path}/mamba.pt')
+
 
 @torch.no_grad()
 def test(model, basis_func, coeff_func, loader, exp_path):
@@ -89,49 +104,61 @@ def test(model, basis_func, coeff_func, loader, exp_path):
 
         # train on the residual
         basis_recon, coeffs = basis_func(x)
-        out = coeffs[:,0][:, None]
 
+        # learn delta coeffs
+        coeffs_delta = coeffs[:, 1:] - coeffs[:, :-1]
+
+        curr_pred = coeffs[:, 0][:, None]
         conv_state = torch.zeros(x.shape[0], 2*model.d_model, model.d_conv).cuda()
         hidden_state = torch.zeros(x.shape[0], 2*model.d_model, model.d_state).cuda()
 
-        z = None
-        for t in range(x.shape[1]):
-            out, conv_state, hidden_state = model.step(out, conv_state, hidden_state)
+        pred_delta = None
+        for t in range(x.shape[1] - 1):
+            curr_pred, conv_state, hidden_state = model.step(curr_pred, conv_state, hidden_state)
 
-            if z is None: z = out
-            else: z = torch.cat((z, out), dim=1)
+            if pred_delta is None: pred_delta = curr_pred
+            else: pred_delta = torch.cat((pred_delta, curr_pred), dim=1)
 
-        loss = (coeffs - z).abs().mean()
+        coeff_loss = (coeffs_delta - pred_delta).abs().mean()
+
+        # recon coeff given delta
+        coeff_pred = coeffs[:, 0][:, None]
+        for t in range(pred_delta.shape[1]):
+            coeff_new = coeff_pred[:, -1] + pred_delta[:, t]
+            coeff_pred = torch.cat((coeff_pred, coeff_new[:, None]), dim=1)
+
+        mamba_recon = coeff_func(coeff_pred)
+        mamba_loss = (x - mamba_recon).abs().mean()
+
+        loss = coeff_loss + mamba_loss
 
         # record perf
-        loss_t.append(loss.item())
+        loss_t.append(coeff_loss.item())
 
         basis_loss = (x - basis_recon).abs().mean()
         basis_t.append(basis_loss.item())
 
-        mamba_recon = coeff_func(z)
-        mamba_loss = (x - mamba_recon).abs().mean()
         mamba_t.append(mamba_loss.item())
 
-        if i % 25 == 0 :
-            print(f'test loss: {np.mean(loss_t[-50:]) :.5f}')
-            print(f'mamba: {np.mean(mamba_t[-50:]) :.5f}')
-            print(f'basis: {np.mean(basis_t[-50:]) :.5f}')
+    print('test')
+    print(f'coeff: {np.mean(loss_t) :.5f}')
+    print(f'mamba: {np.mean(mamba_t) :.5f}')
+    print(f'basis: {np.mean(basis_t) :.5f}')
 
     path = os.path.join(exp_path, 'mamba-test.gif')
 
     video_compare(
-        z[0, 1:].detach().cpu(),
-        mamba_recon[0, 1:].detach().cpu(),
-        x[0, 1:].detach().cpu(),
-        basis_recon[0, 1:].detach().cpu(),
+        pred_delta[0].detach().cpu(),
+        mamba_recon[0].detach().cpu(),
+        x[0].detach().cpu(),
+        basis_recon[0].detach().cpu(),
         ['mamba', 'neural basis'],
         path,
     )
 
 if __name__ == '__main__':
     exp_path = 'results/dev'
-    batch_size = 32
+    batch_size = 16
     num_workers = 4
     nav_type = 'series'
     lr = 1e-4
@@ -151,7 +178,7 @@ if __name__ == '__main__':
 
     model = Mamba(
         d_model=basis.shape[1],
-        d_state=16,
+        d_state=128,
         d_conv=4,
         expand=2,
     ).cuda()

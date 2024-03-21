@@ -83,7 +83,7 @@ def video_compare(coeff, x, z, y, labels, path):
     colors = plt.cm.inferno(np.linspace(0.2, 1, coeff.shape[1]))
 
     # save each frame
-    for i in range(x.shape[0]):
+    for i in range(x.shape[0]-1, x.shape[0]):
         fig = plt.figure(figsize=(10, 10)) 
 
         # coeff line plot
@@ -108,8 +108,8 @@ def video_compare(coeff, x, z, y, labels, path):
         ax2.set_title('neural eigenvalues')
 
         ax3.imshow(x[i], cmap='inferno')
-        ax4.imshow(y[i], cmap='inferno')
-        ax5.imshow(z[i], cmap='inferno')
+        ax4.imshow(z[i], cmap='inferno')
+        ax5.imshow(y[i], cmap='inferno')
 
         # titles
         ax3.set_title(labels[0])
@@ -125,8 +125,8 @@ def video_compare(coeff, x, z, y, labels, path):
         plt.close()
 
     # make gif
-    os.system(f'convert -delay 10 temp/*.png {path}')
-    os.system('rm -r temp')
+    #os.system(f'convert -delay 10 temp/*.png {path}')
+    #os.system('rm -r temp')
 
 def plot_coeff_hist(coeffs, path):
     '''

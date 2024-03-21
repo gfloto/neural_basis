@@ -31,7 +31,10 @@ def get_hps():
     parser.add_argument('--lr', type=float, default=1e-4)
 
     parser.add_argument('--n_layers', type=int, default=6)
-    parser.add_argument('--dim_hidden', type=int, default=128)
+    parser.add_argument('--dim_hidden', type=int, default=64)
+
+    # pca task parameters
+    parser.add_argument('--eigen_reg', type=float, default=1.0)
 
     # basis task params
     parser.add_argument('--n_ortho', type=int, default=int(1e4))
