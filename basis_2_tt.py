@@ -5,7 +5,7 @@ from tqdm import tqdm
 from einops import rearrange, repeat
 
 from plot import basis_video, video_compare 
-from models.parallel_siren import EigenFunction
+from models.parallel_siren import ParallelEigenFunction
 
 def func_inner(x, y):
     assert x.shape == y.shape
@@ -130,7 +130,7 @@ def basis_2_train(loader, hps):
     w0 = torch.ones(hps.n_basis).cuda()
     w0_initial = 30. * torch.ones(hps.n_basis).cuda()
 
-    siren_model = EigenFunction(
+    siren_model = ParallelEigenFunction(
         ensembles=hps.n_basis,
         dim_in = 3, # 2 spatial dims with 1 time
         dim_out = 1, # number of channels

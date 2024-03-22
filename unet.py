@@ -109,7 +109,7 @@ def test(unet, recon_func, loader, exp_path):
 
 if __name__ == '__main__':
     exp_path = 'results/dev'
-    batch_size = 2
+    batch_size = 4
     num_workers = 4
     nav_type = 'series'
     lr = 5e-5

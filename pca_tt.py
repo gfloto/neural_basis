@@ -5,8 +5,22 @@ import numpy as np
 from tqdm import tqdm
 from einops import rearrange, repeat
 
+from legendre import LegendreBasis
 from plot import basis_video, video_compare 
 from models.siren import EigenFunction
+from models.parallel_siren import ParallelEigenFunction
+
+# plot temporal basis
+import matplotlib.pyplot as plt
+def plot_temp(x):
+    fig = plt.figure(figsize=(6, 4))
+
+    for i in range(x.shape[1]):
+        plt.plot(x[:, i], label=f'{i}')
+    
+    if not os.path.exists('temp'): os.makedirs('temp')
+    plt.savefig('temp/temp_basis.png')
+    plt.close()
 
 def func_inner(x, y):
     assert x.shape == y.shape
@@ -42,11 +56,6 @@ def orthogonalize(eigen_f, basis):
     recon = torch.einsum('t e, t e h w -> t h w', coeff, basis)
     eigen_f = eigen_f - recon
 
-    # checkthat eigen_f is orthogonal to basis
-    #ef = repeat(eigen_f, 't h w -> t e h w', e=basis.shape[1])
-    #ip = func_inner(ef, basis)
-    #assert torch.allclose(ip, torch.zeros_like(ip), atol=1e-5)
-
     return eigen_f
 
 def save_basis(eigen_f, basis, path):
@@ -66,54 +75,34 @@ def fourier(x, n_basis):
     recon = torch.fft.ifft2(coeffs).real
     return recon
 
-class LegendreBasis:
-    def __init__(self, n=32, T=50):
-        self.n = n# number of basis functions (different from n_basis for spatial basis)
-        self.T = T
-        self.basis = self.make_basis().cuda()
+def temporal_reg(x, eigen_f, temporal_basis):
+    # projection onto temporal basis
+    c = torch.einsum('b t h w, b t h w -> b t', x, eigen_f)
+    c = (c - c.mean()) / c.std()
 
-    def make_basis(self):
-        x = torch.linspace(-3/4, 3/4, self.T)
-        basis = torch.zeros((self.n, self.T))
-        basis[0] = 1.
-        basis[1] = x
+    coeffs = torch.einsum('b t, t e -> b e', c, temporal_basis)
+    recon = torch.einsum('b e, t e -> b t', coeffs, temporal_basis)
 
-        for i in range(2, self.n):
-            basis[i] = ((2*i - 1) * x * basis[i-1] - (i-1) * basis[i-2]) / i
-        
-        return basis
+    return recon - c 
 
-    def recon_error(self, x, eigen_f):
-        # get eigen-values of x from most recent eigen-function
-        c = torch.einsum('b t h w, b t h w -> b t', x, eigen_f)
-        c = (c - c.mean()) / c.std()
-
-        # ensure that eigen-value function through time is well
-        # represented by the legendre basis
-        coeffs = torch.einsum('b t, l t -> b l', c, self.basis)
-        recon = torch.einsum('b l, l t -> b t', coeffs, self.basis)
-
-        return c - recon
-
-def train(siren_model, loader, optim, basis, basis_num, hps): 
-    siren_model.train()
-    siren_model = siren_model.cuda()
-
-    leg_basis = LegendreBasis()
+def train(spatial_model, temporal_model, loader, optim, basis, basis_num, hps): 
+    spatial_model.train(); temporal_model.train()
+    spatial_model = spatial_model.cuda(); temporal_model = temporal_model.cuda()
 
     h, w = 64, 64 
     bs = hps.batch_size
 
     # domain of eigen-function
-    dom = make_domain(h, w).cuda()
+    spatial_dom = make_domain(h, w).cuda()
+    temporal_dom = torch.linspace(0, 1, 50)[..., None].cuda()
 
-    for _ in range(10):
+    for _ in range(25):
         inner_loss_t, reg_loss_t, recon_t, fourier_t = [], [], [], []
         for i, (x, _) in enumerate(tqdm(loader)):
             x = x.cuda()
 
             # get eigen-function, stack copies into batch
-            eigen_f = siren_model(dom)
+            eigen_f = spatial_model(spatial_dom)
 
             # ensure that eigen-function is normalized and orthogonal to basis
             eigen_f = orthogonalize(eigen_f, basis)
@@ -125,12 +114,21 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
 
             # different losses
             inner = func_inner(eigen_f, x_res)
-            inner_loss = -inner.abs().mean() / h 
+            inner_loss = -inner.abs().mean() / (h * w) 
 
-            # projection onto legendre basis
-            reg_loss = hps.eigen_reg * leg_basis.recon_error(
-                x, eigen_f
+            out = temporal_model(temporal_dom)
+            temporal_basis = out / out.square().sum(dim=0, keepdim=True).sqrt()
+
+            reg_loss = temporal_reg(
+                x, eigen_f, temporal_basis
             ).square().mean() / h
+
+            # encourage orthogonality of temporal basis
+            prod = temporal_basis.T @ temporal_basis
+            prod = torch.triu(prod, diagonal=1)
+            ortho = prod.square().sum() / (prod.shape[0] * prod.shape[1])
+
+            reg_loss = reg_loss + ortho
 
             loss = inner_loss + reg_loss
 
@@ -153,13 +151,17 @@ def train(siren_model, loader, optim, basis, basis_num, hps):
             fourier_loss = (recon_fourier - x).abs().mean()
             fourier_t.append(fourier_loss.item())
 
+            # plot basis
+            if i % 50 == 0:
+                plot_temp(temporal_basis.detach().cpu())
+
         print(f'inner: {np.mean(inner_loss_t)}')
         print(f'reg: {np.mean(reg_loss_t)}')
         print(f'avg recon: {np.mean(recon_t)}')
         print(f'avg fourier: {np.mean(fourier_t)}')
 
     print('saving model')
-    torch.save(siren_model.state_dict(), f'{hps.exp_path}/siren_model.pt')
+    torch.save(spatial_model.state_dict(), f'{hps.exp_path}/spatial_model.pt')
     basis = save_basis(eigen_f[0], basis, hps.exp_path)
 
     if basis_num % 1 == 0:
@@ -230,21 +232,37 @@ def pca_train(loader, hps):
     for nb in range(basis.shape[1], hps.n_basis):
         print(f'optimizing basis {nb}')
 
-        siren_model = EigenFunction(
+        spatial_model = EigenFunction(
             dim_in = 3, # 2 spatial dims with 1 time
-            dim_out = hps.channels, # number of channels
+            dim_out = hps.channels, # number of cgghannels
             dim_hidden = hps.dim_hidden,
             num_layers = hps.n_layers,
         )
 
+        n_temp = 12
+        w0 = torch.ones(n_temp).cuda()
+        w0_initial = torch.linspace(1, n_temp / 2, n_temp).cuda() 
+
+        temporal_model = ParallelEigenFunction(
+            ensembles = n_temp,
+            dim_in = 1,
+            dim_hidden = 64,
+            dim_out = 1,
+            num_layers = 6,
+            w0 = w0,
+            w0_initial = w0_initial,
+        )
+
         # load previous model if exists
         n_model = basis.shape[1] 
-        if os.path.exists(f'{hps.exp_path}/siren_model_{n_model}.pt'):
+        if os.path.exists(f'{hps.exp_path}/spatial_model_{n_model}.pt'):
             print(f'loading model: {n_model}')
-            siren_model.load_state_dict(torch.load(f'{hps.exp_path}/siren_model.pt'))
+            spatial_model.load_state_dict(torch.load(f'{hps.exp_path}/spatial_model.pt'))
 
-        optim = torch.optim.Adam(siren_model.parameters(), lr=hps.lr)
-        basis = train(siren_model, loader, optim, basis, nb, hps)
+        params = list(spatial_model.parameters()) + list(temporal_model.parameters())
+        optim = torch.optim.Adam(params, lr=hps.lr)
+
+        basis = train(spatial_model, temporal_model, loader, optim, basis, nb, hps)
 
 def pca_test(loader, hps):
     # load basis

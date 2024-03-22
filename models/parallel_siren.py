@@ -126,7 +126,7 @@ class SirenNet(nn.Module):
 
         return self.last_layer(x)
 
-class EigenFunction(nn.Module):
+class ParallelEigenFunction(nn.Module):
     def __init__(
             self,
             ensembles,
@@ -154,12 +154,16 @@ class EigenFunction(nn.Module):
             dropout = dropout
         )
 
+    # TODO: for variable sized inputs
+    # there must be a better way...
     def forward(self, x):
-        t, h, w, c = x.shape
-        x = rearrange(x, 't h w c -> (t h w) c')
+        shape = {chr(ord('a') + i) : x.shape[i] for i in range(len(x.shape) - 1)}
 
+        x = rearrange(x, '... c -> (...) c')
         eigen_f = self.net(x)
 
-        eigen_f = rearrange(eigen_f, '(t h w) e 1 -> t e h w', t=t, h=h, w=w)
-        return eigen_f
+        shps = ''.join([f'{k} ' for k in shape.keys()])[:-1]
+        eigen_f = rearrange(eigen_f, f'({shps}) e c -> {shps} e c', **shape) 
+
+        return eigen_f.squeeze(-1)
         
